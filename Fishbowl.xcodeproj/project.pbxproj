@@ -1,0 +1,530 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 46;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0A7C23C004180927486A2D14 /* FishbowlWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FDAC28C13DBDF9CC67A5673 /* FishbowlWidget.swift */; };
+		0FC9CB6A91F996E541CCE234 /* FishbowlWidgetExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = D393B54548E0FA8AABB7429C /* FishbowlWidgetExtension.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		28AC44286375992DA19D3BA8 /* LiquidGlassBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7FFFCCFCAD1E65EE8D5B96F /* LiquidGlassBackground.swift */; };
+		2AE1202C2020E869D03A6725 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4DC102637752487BF437CDD /* ContentView.swift */; };
+		5582345E3FAB18A25E41EE6E /* AquariumSceneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8490D8A20E8DA00430051ACC /* AquariumSceneView.swift */; };
+		61711C25D07CFEC3CA330933 /* LiquidGlassBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7FFFCCFCAD1E65EE8D5B96F /* LiquidGlassBackground.swift */; };
+		73C5151B9CA6344667B44F4B /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F799020120081E2A88455BD0 /* Foundation.framework */; };
+		75E3906CA1E99178422B83A2 /* FishbowlWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE530932AAE6D8E60719607C /* FishbowlWidgetBundle.swift */; };
+		9077A7A519E82DBF4F2E9FDE /* FishbowlApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDFF2FC725793349D4B33938 /* FishbowlApp.swift */; };
+		A160D13F6B5C93559F882223 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F799020120081E2A88455BD0 /* Foundation.framework */; };
+		AF26962BABAC399E540C72CF /* AquariumSceneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8490D8A20E8DA00430051ACC /* AquariumSceneView.swift */; };
+		CE1D33ADB1941E4A1FC08FC4 /* AquariumConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7593474110C4BD59EFB3432C /* AquariumConfiguration.swift */; };
+		E78152C76294F4063C9417D7 /* AquariumConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7593474110C4BD59EFB3432C /* AquariumConfiguration.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		4865A433F9AA5A961281EE37 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = DAABDCD519E4A4396F7F243D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 05377C3970C15A54008BBCB8;
+			remoteInfo = FishbowlWidgetExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		841A9AE9FC925E9A426F09E1 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				0FC9CB6A91F996E541CCE234 /* FishbowlWidgetExtension.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		3FDAC28C13DBDF9CC67A5673 /* FishbowlWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FishbowlWidget.swift; sourceTree = "<group>"; };
+		600ED0F0995142C5CC94E4D8 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		7593474110C4BD59EFB3432C /* AquariumConfiguration.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AquariumConfiguration.swift; sourceTree = "<group>"; };
+		7F1DC168360A4767668D3B8A /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		8490D8A20E8DA00430051ACC /* AquariumSceneView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AquariumSceneView.swift; sourceTree = "<group>"; };
+		B7FFFCCFCAD1E65EE8D5B96F /* LiquidGlassBackground.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LiquidGlassBackground.swift; sourceTree = "<group>"; };
+		BDFF2FC725793349D4B33938 /* FishbowlApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FishbowlApp.swift; sourceTree = "<group>"; };
+		BE530932AAE6D8E60719607C /* FishbowlWidgetBundle.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FishbowlWidgetBundle.swift; sourceTree = "<group>"; };
+		C4B2902395EFD5EA5A8BC01B /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		D393B54548E0FA8AABB7429C /* FishbowlWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = FishbowlWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		E32F9EFBA4840F294CEA80BC /* Fishbowl.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Fishbowl.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F4DC102637752487BF437CDD /* ContentView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		F799020120081E2A88455BD0 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		39850A09BFF3B7ABA9F61844 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A160D13F6B5C93559F882223 /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		903BF966676A5087BB48831A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				73C5151B9CA6344667B44F4B /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		2E616C5E14044DB11BA3B38F /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				E32F9EFBA4840F294CEA80BC /* Fishbowl.app */,
+				D393B54548E0FA8AABB7429C /* FishbowlWidgetExtension.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		323C4F177ACFE4B8141D4703 = {
+			isa = PBXGroup;
+			children = (
+				2E616C5E14044DB11BA3B38F /* Products */,
+				AF4104D4BC4D4E0854EA50EC /* Frameworks */,
+				DD5ADC03FB5C13B7DAE57845 /* Fishbowl */,
+				71EFD4725FC52842884D593C /* FishbowlWidgetExtension */,
+			);
+			sourceTree = "<group>";
+		};
+		3AA50F9AF2A676DFDA9C2C68 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				BDFF2FC725793349D4B33938 /* FishbowlApp.swift */,
+				F4DC102637752487BF437CDD /* ContentView.swift */,
+				600ED0F0995142C5CC94E4D8 /* Info.plist */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		4B7104DA08BDAED986BA2CBD /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				F799020120081E2A88455BD0 /* Foundation.framework */,
+			);
+			name = iOS;
+			sourceTree = "<group>";
+		};
+		71EFD4725FC52842884D593C /* FishbowlWidgetExtension */ = {
+			isa = PBXGroup;
+			children = (
+				BE530932AAE6D8E60719607C /* FishbowlWidgetBundle.swift */,
+				3FDAC28C13DBDF9CC67A5673 /* FishbowlWidget.swift */,
+				C4B2902395EFD5EA5A8BC01B /* Info.plist */,
+			);
+			path = FishbowlWidgetExtension;
+			sourceTree = "<group>";
+		};
+		AF4104D4BC4D4E0854EA50EC /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				4B7104DA08BDAED986BA2CBD /* iOS */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		DD5ADC03FB5C13B7DAE57845 /* Fishbowl */ = {
+			isa = PBXGroup;
+			children = (
+				3AA50F9AF2A676DFDA9C2C68 /* App */,
+				F954B0A50D16310247C606D7 /* Shared */,
+				7F1DC168360A4767668D3B8A /* Assets.xcassets */,
+			);
+			path = Fishbowl;
+			sourceTree = "<group>";
+		};
+		F954B0A50D16310247C606D7 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				7593474110C4BD59EFB3432C /* AquariumConfiguration.swift */,
+				B7FFFCCFCAD1E65EE8D5B96F /* LiquidGlassBackground.swift */,
+				8490D8A20E8DA00430051ACC /* AquariumSceneView.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		05377C3970C15A54008BBCB8 /* FishbowlWidgetExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 14984EE8DDCE8D8BA258BC8F /* Build configuration list for PBXNativeTarget "FishbowlWidgetExtension" */;
+			buildPhases = (
+				C5075E9E481CE2754E22CCAE /* Sources */,
+				903BF966676A5087BB48831A /* Frameworks */,
+				D8FCE038F805A3E2D7368942 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = FishbowlWidgetExtension;
+			productName = FishbowlWidgetExtension;
+			productReference = D393B54548E0FA8AABB7429C /* FishbowlWidgetExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		E4CE3D45868B50C4280E5F59 /* Fishbowl */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1600E42C048510B83D583AB5 /* Build configuration list for PBXNativeTarget "Fishbowl" */;
+			buildPhases = (
+				BAE54CE1C3513E2A7C19566C /* Sources */,
+				39850A09BFF3B7ABA9F61844 /* Frameworks */,
+				1435D63D8B0CE1E704160E85 /* Resources */,
+				841A9AE9FC925E9A426F09E1 /* Embed App Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				643EF91B40EC29B3EE972B41 /* PBXTargetDependency */,
+			);
+			name = Fishbowl;
+			productName = Fishbowl;
+			productReference = E32F9EFBA4840F294CEA80BC /* Fishbowl.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		DAABDCD519E4A4396F7F243D /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastSwiftUpdateCheck = 2602;
+				LastUpgradeCheck = 2602;
+				TargetAttributes = {
+					05377C3970C15A54008BBCB8 = {
+						DevelopmentTeam = PLNFCVNGS6;
+						ProvisioningStyle = Automatic;
+					};
+					E4CE3D45868B50C4280E5F59 = {
+						DevelopmentTeam = PLNFCVNGS6;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 6E49EBBA9214D4D4A0CDFE8F /* Build configuration list for PBXProject "Fishbowl" */;
+			compatibilityVersion = "Xcode 3.2";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 323C4F177ACFE4B8141D4703;
+			productRefGroup = 2E616C5E14044DB11BA3B38F /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				E4CE3D45868B50C4280E5F59 /* Fishbowl */,
+				05377C3970C15A54008BBCB8 /* FishbowlWidgetExtension */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		1435D63D8B0CE1E704160E85 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D8FCE038F805A3E2D7368942 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		BAE54CE1C3513E2A7C19566C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9077A7A519E82DBF4F2E9FDE /* FishbowlApp.swift in Sources */,
+				2AE1202C2020E869D03A6725 /* ContentView.swift in Sources */,
+				CE1D33ADB1941E4A1FC08FC4 /* AquariumConfiguration.swift in Sources */,
+				61711C25D07CFEC3CA330933 /* LiquidGlassBackground.swift in Sources */,
+				5582345E3FAB18A25E41EE6E /* AquariumSceneView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C5075E9E481CE2754E22CCAE /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				75E3906CA1E99178422B83A2 /* FishbowlWidgetBundle.swift in Sources */,
+				0A7C23C004180927486A2D14 /* FishbowlWidget.swift in Sources */,
+				E78152C76294F4063C9417D7 /* AquariumConfiguration.swift in Sources */,
+				28AC44286375992DA19D3BA8 /* LiquidGlassBackground.swift in Sources */,
+				AF26962BABAC399E540C72CF /* AquariumSceneView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		643EF91B40EC29B3EE972B41 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = FishbowlWidgetExtension;
+			target = 05377C3970C15A54008BBCB8 /* FishbowlWidgetExtension */;
+			targetProxy = 4865A433F9AA5A961281EE37 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		180BB2FB3368CFE5D2CBF0CA /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = PLNFCVNGS6;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Fishbowl/App/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nate.fishbowlWidget;
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		5047A3C81AACD8E96B1F27E9 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = PLNFCVNGS6;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = FishbowlWidgetExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nate.fishbowlWidget.widget;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		59219381EF28A60E591CBEB1 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Owholemodule";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		5AF9087AFB72ADDB87D46955 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = PLNFCVNGS6;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = FishbowlWidgetExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nate.fishbowlWidget.widget;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		6AAAEA8DBEB90A7AC26E2D45 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		F36EDAC077F5562D1BB176A5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = PLNFCVNGS6;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Fishbowl/App/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nate.fishbowlWidget;
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		14984EE8DDCE8D8BA258BC8F /* Build configuration list for PBXNativeTarget "FishbowlWidgetExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5AF9087AFB72ADDB87D46955 /* Release */,
+				5047A3C81AACD8E96B1F27E9 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		1600E42C048510B83D583AB5 /* Build configuration list for PBXNativeTarget "Fishbowl" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				180BB2FB3368CFE5D2CBF0CA /* Release */,
+				F36EDAC077F5562D1BB176A5 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		6E49EBBA9214D4D4A0CDFE8F /* Build configuration list for PBXProject "Fishbowl" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6AAAEA8DBEB90A7AC26E2D45 /* Debug */,
+				59219381EF28A60E591CBEB1 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = DAABDCD519E4A4396F7F243D /* Project object */;
+}
