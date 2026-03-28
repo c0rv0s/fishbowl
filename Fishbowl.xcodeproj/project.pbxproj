@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		0A7C23C004180927486A2D14 /* FishbowlWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FDAC28C13DBDF9CC67A5673 /* FishbowlWidget.swift */; };
 		0FC9CB6A91F996E541CCE234 /* FishbowlWidgetExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = D393B54548E0FA8AABB7429C /* FishbowlWidgetExtension.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		1C38F4F7B7D94A5CA9B7B9A1 /* BowlProfileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E0AB8EDC22E4555A3DF52A0 /* BowlProfileStore.swift */; };
 		28AC44286375992DA19D3BA8 /* LiquidGlassBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7FFFCCFCAD1E65EE8D5B96F /* LiquidGlassBackground.swift */; };
 		2AE1202C2020E869D03A6725 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4DC102637752487BF437CDD /* ContentView.swift */; };
 		5582345E3FAB18A25E41EE6E /* AquariumSceneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8490D8A20E8DA00430051ACC /* AquariumSceneView.swift */; };
@@ -20,6 +21,7 @@
 		AF26962BABAC399E540C72CF /* AquariumSceneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8490D8A20E8DA00430051ACC /* AquariumSceneView.swift */; };
 		CE1D33ADB1941E4A1FC08FC4 /* AquariumConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7593474110C4BD59EFB3432C /* AquariumConfiguration.swift */; };
 		E78152C76294F4063C9417D7 /* AquariumConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7593474110C4BD59EFB3432C /* AquariumConfiguration.swift */; };
+		F1A66074241D4D1E921A1E1D /* BowlProfileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E0AB8EDC22E4555A3DF52A0 /* BowlProfileStore.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -48,7 +50,9 @@
 
 /* Begin PBXFileReference section */
 		3FDAC28C13DBDF9CC67A5673 /* FishbowlWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FishbowlWidget.swift; sourceTree = "<group>"; };
+		4E0AB8EDC22E4555A3DF52A0 /* BowlProfileStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BowlProfileStore.swift; sourceTree = "<group>"; };
 		600ED0F0995142C5CC94E4D8 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		6F8F1E3EE858432A83355E6D /* Fishbowl.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = Fishbowl.entitlements; sourceTree = "<group>"; };
 		7593474110C4BD59EFB3432C /* AquariumConfiguration.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AquariumConfiguration.swift; sourceTree = "<group>"; };
 		7F1DC168360A4767668D3B8A /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		8490D8A20E8DA00430051ACC /* AquariumSceneView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AquariumSceneView.swift; sourceTree = "<group>"; };
@@ -56,6 +60,7 @@
 		BDFF2FC725793349D4B33938 /* FishbowlApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FishbowlApp.swift; sourceTree = "<group>"; };
 		BE530932AAE6D8E60719607C /* FishbowlWidgetBundle.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FishbowlWidgetBundle.swift; sourceTree = "<group>"; };
 		C4B2902395EFD5EA5A8BC01B /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		CF5A3A01348149B5B4DAA0B1 /* FishbowlWidgetExtension.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = FishbowlWidgetExtension.entitlements; sourceTree = "<group>"; };
 		D393B54548E0FA8AABB7429C /* FishbowlWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = FishbowlWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		E32F9EFBA4840F294CEA80BC /* Fishbowl.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Fishbowl.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F4DC102637752487BF437CDD /* ContentView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -107,6 +112,7 @@
 				BDFF2FC725793349D4B33938 /* FishbowlApp.swift */,
 				F4DC102637752487BF437CDD /* ContentView.swift */,
 				600ED0F0995142C5CC94E4D8 /* Info.plist */,
+				6F8F1E3EE858432A83355E6D /* Fishbowl.entitlements */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -125,6 +131,7 @@
 				BE530932AAE6D8E60719607C /* FishbowlWidgetBundle.swift */,
 				3FDAC28C13DBDF9CC67A5673 /* FishbowlWidget.swift */,
 				C4B2902395EFD5EA5A8BC01B /* Info.plist */,
+				CF5A3A01348149B5B4DAA0B1 /* FishbowlWidgetExtension.entitlements */,
 			);
 			path = FishbowlWidgetExtension;
 			sourceTree = "<group>";
@@ -151,6 +158,7 @@
 			isa = PBXGroup;
 			children = (
 				7593474110C4BD59EFB3432C /* AquariumConfiguration.swift */,
+				4E0AB8EDC22E4555A3DF52A0 /* BowlProfileStore.swift */,
 				B7FFFCCFCAD1E65EE8D5B96F /* LiquidGlassBackground.swift */,
 				8490D8A20E8DA00430051ACC /* AquariumSceneView.swift */,
 			);
@@ -259,6 +267,7 @@
 				9077A7A519E82DBF4F2E9FDE /* FishbowlApp.swift in Sources */,
 				2AE1202C2020E869D03A6725 /* ContentView.swift in Sources */,
 				CE1D33ADB1941E4A1FC08FC4 /* AquariumConfiguration.swift in Sources */,
+				1C38F4F7B7D94A5CA9B7B9A1 /* BowlProfileStore.swift in Sources */,
 				61711C25D07CFEC3CA330933 /* LiquidGlassBackground.swift in Sources */,
 				5582345E3FAB18A25E41EE6E /* AquariumSceneView.swift in Sources */,
 			);
@@ -271,6 +280,7 @@
 				75E3906CA1E99178422B83A2 /* FishbowlWidgetBundle.swift in Sources */,
 				0A7C23C004180927486A2D14 /* FishbowlWidget.swift in Sources */,
 				E78152C76294F4063C9417D7 /* AquariumConfiguration.swift in Sources */,
+				F1A66074241D4D1E921A1E1D /* BowlProfileStore.swift in Sources */,
 				28AC44286375992DA19D3BA8 /* LiquidGlassBackground.swift in Sources */,
 				AF26962BABAC399E540C72CF /* AquariumSceneView.swift in Sources */,
 			);
@@ -294,6 +304,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = Fishbowl/App/Fishbowl.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = PLNFCVNGS6;
@@ -316,6 +327,7 @@
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = FishbowlWidgetExtension/FishbowlWidgetExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = PLNFCVNGS6;
@@ -392,6 +404,7 @@
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = FishbowlWidgetExtension/FishbowlWidgetExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = PLNFCVNGS6;
@@ -478,6 +491,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = Fishbowl/App/Fishbowl.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = PLNFCVNGS6;

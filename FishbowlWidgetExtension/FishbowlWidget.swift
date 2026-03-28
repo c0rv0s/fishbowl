@@ -2,80 +2,90 @@ import AppIntents
 import SwiftUI
 import WidgetKit
 
+struct BowlProfileEntity: AppEntity, Identifiable, Sendable {
+    static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "Bowl")
+    static let defaultQuery = BowlProfileQuery()
+
+    let id: String
+    let name: String
+    let subtitle: String
+
+    init(profile: BowlProfile) {
+        id = profile.id.uuidString
+        name = profile.name
+        subtitle = profile.widgetSubtitle
+    }
+
+    var displayRepresentation: DisplayRepresentation {
+        DisplayRepresentation(
+            title: LocalizedStringResource(stringLiteral: name),
+            subtitle: LocalizedStringResource(stringLiteral: subtitle)
+        )
+    }
+}
+
+struct BowlProfileQuery: EntityQuery {
+    func entities(for identifiers: [String]) async throws -> [BowlProfileEntity] {
+        let identifierSet = Set(identifiers)
+        return BowlRepository
+            .loadProfiles()
+            .filter { identifierSet.contains($0.id.uuidString) }
+            .map(BowlProfileEntity.init(profile:))
+    }
+
+    func suggestedEntities() async throws -> [BowlProfileEntity] {
+        BowlRepository.loadProfiles().map(BowlProfileEntity.init(profile:))
+    }
+}
+
 struct AquariumWidgetIntent: WidgetConfigurationIntent {
-    static let title: LocalizedStringResource = "Customize Aquarium"
-    static let description = IntentDescription("Pick the bowl, fish, companion, sand, and decor for your widget.")
+    static let title: LocalizedStringResource = "Choose Bowl"
+    static let description = IntentDescription("Pick one of your saved bowls or tanks for the widget.")
 
-    @Parameter(title: "Vessel")
-    var vesselStyle: AquariumVesselStyle?
-
-    @Parameter(title: "Fish")
-    var fishSpecies: FishSpecies?
-
-    @Parameter(title: "Count")
-    var fishCount: FishCount?
-
-    @Parameter(title: "Companion")
-    var companion: CompanionStyle?
-
-    @Parameter(title: "Substrate")
-    var substrate: SubstrateStyle?
-
-    @Parameter(title: "Decoration")
-    var decoration: DecorationStyle?
+    @Parameter(title: "Bowl")
+    var profile: BowlProfileEntity?
 
     init() {
-        vesselStyle = .orb
-        fishSpecies = .royalBetta
-        fishCount = .duet
-        companion = .shrimp
-        substrate = .coralBloom
-        decoration = .coralGarden
+        profile = BowlRepository
+            .loadProfiles()
+            .first
+            .map(BowlProfileEntity.init(profile:))
     }
 
     static var parameterSummary: some ParameterSummary {
-        Summary("Show \(\.$fishCount) \(\.$fishSpecies) in \(\.$vesselStyle)") {
-            \.$companion
-            \.$substrate
-            \.$decoration
-        }
-    }
-
-    var aquariumConfiguration: AquariumConfiguration {
-        AquariumConfiguration(
-            vesselStyle: vesselStyle ?? .orb,
-            fishSpecies: fishSpecies ?? .royalBetta,
-            fishCount: fishCount ?? .duet,
-            companion: companion ?? .shrimp,
-            substrate: substrate ?? .coralBloom,
-            decoration: decoration ?? .coralGarden
-        )
+        Summary("Show \(\.$profile)")
     }
 }
 
 struct FishbowlEntry: TimelineEntry {
     let date: Date
-    let configuration: AquariumConfiguration
+    let profile: BowlProfile
 }
 
 struct FishbowlTimelineProvider: AppIntentTimelineProvider {
     func placeholder(in context: Context) -> FishbowlEntry {
-        FishbowlEntry(date: .now, configuration: .hero)
+        FishbowlEntry(date: .now, profile: BowlRepository.defaultProfiles().first ?? BowlProfile(name: "Blue Bowl", configuration: .hero, mode: .decorative))
     }
 
     func snapshot(for configuration: AquariumWidgetIntent, in context: Context) async -> FishbowlEntry {
-        FishbowlEntry(date: .now, configuration: configuration.aquariumConfiguration)
+        FishbowlEntry(date: .now, profile: profile(for: configuration))
     }
 
     func timeline(for configuration: AquariumWidgetIntent, in context: Context) async -> Timeline<FishbowlEntry> {
-        let entries = (0..<6).map { index in
+        let profile = profile(for: configuration)
+        let entries = (0..<12).map { index in
             FishbowlEntry(
-                date: Calendar.current.date(byAdding: .minute, value: index * 20, to: .now) ?? .now,
-                configuration: configuration.aquariumConfiguration
+                date: Calendar.current.date(byAdding: .hour, value: index, to: .now) ?? .now,
+                profile: profile
             )
         }
 
         return Timeline(entries: entries, policy: .atEnd)
+    }
+
+    private func profile(for configuration: AquariumWidgetIntent) -> BowlProfile {
+        let identifier = configuration.profile.flatMap { UUID(uuidString: $0.id) }
+        return BowlRepository.profile(for: identifier)
     }
 }
 
@@ -101,7 +111,8 @@ private struct FishbowlWidgetEntryView: View {
         AquariumSceneView(
             configuration: resolvedConfiguration,
             format: displayFormat,
-            phase: entry.date.timeIntervalSinceReferenceDate / 8.0
+            phase: entry.date.timeIntervalSinceReferenceDate / 8.0,
+            petSnapshot: entry.profile.petSnapshot(at: entry.date)
         )
         .padding(sceneInset)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -123,26 +134,26 @@ private struct FishbowlWidgetEntryView: View {
 
     private var resolvedConfiguration: AquariumConfiguration {
         switch family {
-        case .systemMedium where entry.configuration.vesselStyle == .orb:
+        case .systemMedium where entry.profile.configuration.vesselStyle == .orb:
             return AquariumConfiguration(
                 vesselStyle: .gallery,
-                fishSpecies: entry.configuration.fishSpecies,
-                fishCount: entry.configuration.fishCount,
-                companion: entry.configuration.companion,
-                substrate: entry.configuration.substrate,
-                decoration: entry.configuration.decoration
+                fishSpecies: entry.profile.configuration.fishSpecies,
+                fishCount: entry.profile.configuration.fishCount,
+                companion: entry.profile.configuration.companion,
+                substrate: entry.profile.configuration.substrate,
+                decoration: entry.profile.configuration.decoration
             )
-        case .systemLarge where entry.configuration.vesselStyle == .orb:
+        case .systemLarge where entry.profile.configuration.vesselStyle == .orb:
             return AquariumConfiguration(
                 vesselStyle: .panorama,
-                fishSpecies: entry.configuration.fishSpecies,
-                fishCount: entry.configuration.fishCount,
-                companion: entry.configuration.companion,
-                substrate: entry.configuration.substrate,
-                decoration: entry.configuration.decoration
+                fishSpecies: entry.profile.configuration.fishSpecies,
+                fishCount: entry.profile.configuration.fishCount,
+                companion: entry.profile.configuration.companion,
+                substrate: entry.profile.configuration.substrate,
+                decoration: entry.profile.configuration.decoration
             )
         default:
-            return entry.configuration
+            return entry.profile.configuration
         }
     }
 

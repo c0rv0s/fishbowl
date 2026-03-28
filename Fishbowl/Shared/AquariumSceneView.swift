@@ -4,13 +4,31 @@ struct AquariumSceneView: View {
     let configuration: AquariumConfiguration
     let format: AquariumDisplayFormat
     let phase: Double
+    let petSnapshot: AquariumPetSnapshot
+    let foodPellets: [AquariumFoodPellet]
+
+    init(
+        configuration: AquariumConfiguration,
+        format: AquariumDisplayFormat,
+        phase: Double,
+        petSnapshot: AquariumPetSnapshot = .decorative(at: .now),
+        foodPellets: [AquariumFoodPellet] = []
+    ) {
+        self.configuration = configuration
+        self.format = format
+        self.phase = phase
+        self.petSnapshot = petSnapshot
+        self.foodPellets = foodPellets
+    }
 
     var body: some View {
         GeometryReader { geometry in
             AquariumGlassVessel(
                 configuration: configuration,
                 format: format,
-                phase: phase
+                phase: phase,
+                petSnapshot: petSnapshot,
+                foodPellets: foodPellets
             )
             .padding(format.bodyInset)
         }
@@ -22,6 +40,8 @@ private struct AquariumGlassVessel: View {
     let configuration: AquariumConfiguration
     let format: AquariumDisplayFormat
     let phase: Double
+    let petSnapshot: AquariumPetSnapshot
+    let foodPellets: [AquariumFoodPellet]
 
     private var bodyShape: AquariumBodyShape {
         AquariumBodyShape(style: configuration.vesselStyle)
@@ -49,7 +69,9 @@ private struct AquariumGlassVessel: View {
                 AquariumInteriorView(
                     configuration: configuration,
                     format: format,
-                    phase: phase
+                    phase: phase,
+                    petSnapshot: petSnapshot,
+                    foodPellets: foodPellets
                 )
             }
     }
@@ -80,6 +102,8 @@ private struct AquariumInteriorView: View {
     let configuration: AquariumConfiguration
     let format: AquariumDisplayFormat
     let phase: Double
+    let petSnapshot: AquariumPetSnapshot
+    let foodPellets: [AquariumFoodPellet]
 
     private var sceneAccentColors: [Color] {
         configuration.substrate.accentColors + configuration.decoration.accentColors + configuration.fishSpecies.palette
@@ -94,6 +118,7 @@ private struct AquariumInteriorView: View {
                 Color.white.opacity(0.06)
 
                 IridescentMist(colors: sceneAccentColors)
+                    .opacity(petSnapshot.isAlive ? 0.72 + petSnapshot.colorStrength * 0.28 : 0.46)
 
                 WaterSurfaceShape(
                     level: waterLevel,
@@ -118,7 +143,14 @@ private struct AquariumInteriorView: View {
                 .stroke(Color.white.opacity(0.34), lineWidth: 1)
                 .blur(radius: 0.6)
 
-                BubbleField(phase: phase, waterLevel: waterLevel)
+                BubbleField(
+                    phase: phase,
+                    waterLevel: waterLevel,
+                    intensity: petSnapshot.bubbleIntensity
+                )
+
+                FoodPelletField(pellets: foodPellets)
+                    .mask(waterMask(level: waterLevel))
 
                 SubstrateBed(
                     substrate: configuration.substrate,
@@ -135,7 +167,9 @@ private struct AquariumInteriorView: View {
                 ForEach(Array(fishLayouts(in: size).enumerated()), id: \.offset) { index, layout in
                     FishSprite(
                         species: configuration.fishSpecies,
-                        isMirrored: layout.isMirrored
+                        isMirrored: layout.isMirrored,
+                        vitality: petSnapshot.colorStrength,
+                        isAlive: petSnapshot.isAlive
                     )
                     .frame(
                         width: layout.size.width,
@@ -143,8 +177,20 @@ private struct AquariumInteriorView: View {
                     )
                     .rotationEffect(.degrees(layout.rotation))
                     .position(layout.position)
+                    .opacity(petSnapshot.isAlive ? 1 : 0.62)
                     .shadow(color: configuration.fishSpecies.palette.last?.opacity(0.28) ?? .clear, radius: 12)
                     .mask(waterMask(level: waterLevel))
+                }
+
+                if !petSnapshot.isAlive {
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.05),
+                            Color.black.opacity(0.10),
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
                 }
             }
         }
@@ -156,6 +202,9 @@ private struct AquariumInteriorView: View {
         let baseX: [CGFloat]
         let baseY: [CGFloat]
         let scales: [CGFloat]
+        let foodResponse = foodResponse(in: size)
+        let laneWidth = size.width * (format == .widgetSmall ? 0.068 : 0.086)
+        let verticalRange = size.height * (format == .widgetSmall ? 0.038 : 0.048)
 
         switch count {
         case 1:
@@ -173,21 +222,99 @@ private struct AquariumInteriorView: View {
         }
 
         return (0..<count).map { index in
-            let swing = sin(phase * 1.6 + Double(index) * 1.4)
-            let drift = cos(phase * 1.1 + Double(index) * 1.9)
-            let width = size.width * scales[index] * formatScale
-            let height = width * 0.72
+            let cruisePhase = phase * (0.46 + Double(index) * 0.05) + Double(index) * 1.7
+            let meanderPhase = phase * (0.92 + Double(index) * 0.07) + Double(index) * 2.4
+            let bobPhase = phase * (0.74 + Double(index) * 0.06) + Double(index) * 1.2
+            let tiltPhase = phase * (1.16 + Double(index) * 0.04) + Double(index) * 0.9
+            let driftScale = petSnapshot.driftIntensity
+            let sweep = CGFloat(sin(cruisePhase) * 0.74 + sin(meanderPhase) * 0.26)
+            let bob = CGFloat(sin(bobPhase) * 0.76 + cos(tiltPhase) * 0.24)
+            let idlePosition = CGPoint(
+                x: size.width * baseX[index] + sweep * laneWidth * driftScale,
+                y: size.height * baseY[index] + bob * verticalRange * driftScale
+            )
+            let width = size.width * scales[index] * formatScale * petSnapshot.bodyScaleX
+            let height = width * 0.72 * petSnapshot.bodyScaleY
+            let idleHeading = cos(cruisePhase) * 0.72 + cos(meanderPhase) * 0.28
+            let foodInterest = foodResponse.map { response in
+                interestStrength(response.strength, index: index, count: count)
+            } ?? 0
+            let foodTarget = foodResponse.map { response in
+                foodTargetPosition(
+                    from: response.anchor,
+                    index: index,
+                    count: count,
+                    size: size
+                )
+            } ?? idlePosition
+            let foodOrbitPosition = CGPoint(
+                x: foodTarget.x + sweep * laneWidth * max(0.42, 0.68 - foodInterest * 0.18) * max(0.44, driftScale),
+                y: foodTarget.y + bob * verticalRange * max(0.34, 0.56 - foodInterest * 0.12) * max(0.44, driftScale)
+            )
+            let livePosition = CGPoint(
+                x: idlePosition.x + (foodOrbitPosition.x - idlePosition.x) * foodInterest,
+                y: idlePosition.y + (foodOrbitPosition.y - idlePosition.y) * foodInterest
+            )
+            let targetHeading = max(-1, min(1, Double((foodOrbitPosition.x - idlePosition.x) / max(size.width * 0.18, 1))))
+            let heading = idleHeading * Double(1 - foodInterest) + targetHeading * Double(foodInterest)
+            let deadPosition = CGPoint(
+                x: size.width * min(max(baseX[index], 0.28), 0.72),
+                y: size.height * (0.77 + CGFloat(index) * 0.04)
+            )
 
             return FishLayout(
-                position: CGPoint(
-                    x: size.width * baseX[index] + CGFloat(swing) * size.width * 0.04,
-                    y: size.height * baseY[index] + CGFloat(drift) * size.height * 0.03
-                ),
+                position: petSnapshot.isAlive ? livePosition : deadPosition,
                 size: CGSize(width: width, height: height),
-                rotation: Double(-9 + index * 7) + swing * 8,
-                isMirrored: index % 2 == 0
+                rotation: petSnapshot.isAlive
+                ? Double(-4 + index * 4) + heading * 10 + Double(bob) * 6 * Double(driftScale)
+                : Double(76 - index * 9),
+                isMirrored: petSnapshot.isAlive ? heading > 0 : index % 2 == 0
             )
         }
+    }
+
+    private func foodResponse(in size: CGSize) -> FoodResponse? {
+        guard !foodPellets.isEmpty else { return nil }
+
+        let xFraction = foodPellets.map(\.xFraction).reduce(0, +) / CGFloat(foodPellets.count)
+        let yFraction = foodPellets.map(\.yFraction).reduce(0, +) / CGFloat(foodPellets.count)
+        let scale = foodPellets.map(\.scale).reduce(0, +) / CGFloat(foodPellets.count)
+        let depthProgress = smoothStep(from: 0.18, to: 0.74, value: yFraction)
+        let freshness = smoothStep(from: 0.24, to: 1.0, value: scale)
+        let strength = min(0.70, depthProgress * (0.42 + freshness * 0.34))
+
+        guard strength > 0.02 else { return nil }
+
+        return FoodResponse(
+            anchor: CGPoint(
+                x: size.width * xFraction,
+                y: size.height * yFraction
+            ),
+            strength: strength
+        )
+    }
+
+    private func foodTargetPosition(from anchor: CGPoint, index: Int, count: Int, size: CGSize) -> CGPoint {
+        let centerOffset = CGFloat(index) - CGFloat(count - 1) * 0.5
+        let spread = size.width * (format == .widgetSmall ? 0.050 : 0.068)
+        let x = min(max(anchor.x + centerOffset * spread, size.width * 0.18), size.width * 0.82)
+        let y = min(
+            max(anchor.y - size.height * (0.08 + CGFloat(index % 2) * 0.03), size.height * 0.24),
+            size.height * 0.72
+        )
+        return CGPoint(x: x, y: y)
+    }
+
+    private func interestStrength(_ base: CGFloat, index: Int, count: Int) -> CGFloat {
+        let centerOffset = abs(CGFloat(index) - CGFloat(count - 1) * 0.5)
+        let taper = max(0.78, 1 - centerOffset * 0.12)
+        return min(0.72, base * taper)
+    }
+
+    private func smoothStep(from lower: CGFloat, to upper: CGFloat, value: CGFloat) -> CGFloat {
+        guard upper > lower else { return 0 }
+        let t = min(max((value - lower) / (upper - lower), 0), 1)
+        return t * t * (3 - 2 * t)
     }
 
     @ViewBuilder
@@ -248,6 +375,11 @@ private struct FishLayout {
     let size: CGSize
     let rotation: Double
     let isMirrored: Bool
+}
+
+private struct FoodResponse {
+    let anchor: CGPoint
+    let strength: CGFloat
 }
 
 private struct AquariumRefractionOverlay: View {
@@ -349,6 +481,7 @@ private struct SubstrateBed: View {
 private struct BubbleField: View {
     let phase: Double
     let waterLevel: CGFloat
+    let intensity: Double
 
     var body: some View {
         GeometryReader { geometry in
@@ -361,11 +494,11 @@ private struct BubbleField: View {
                 let y = size.height * (0.88 - 0.52 * CGFloat(travel))
 
                 Circle()
-                    .fill(Color.white.opacity(0.24))
-                    .frame(width: size.width * (0.012 + CGFloat(index % 3) * 0.005))
+                    .fill(Color.white.opacity(0.24 * intensity))
+                    .frame(width: size.width * (0.012 + CGFloat(index % 3) * 0.005) * (0.72 + 0.28 * intensity))
                     .overlay {
                         Circle()
-                            .stroke(Color.white.opacity(0.45), lineWidth: 0.6)
+                            .stroke(Color.white.opacity(0.45 * intensity), lineWidth: 0.6)
                     }
                     .position(
                         x: size.width * horizontal + CGFloat(sin(bubblePhase * 2.2)) * size.width * 0.012,
@@ -376,9 +509,46 @@ private struct BubbleField: View {
     }
 }
 
+private struct FoodPelletField: View {
+    let pellets: [AquariumFoodPellet]
+
+    var body: some View {
+        GeometryReader { geometry in
+            let size = geometry.size
+
+            ForEach(pellets) { pellet in
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.54, green: 0.37, blue: 0.20),
+                                Color(red: 0.84, green: 0.67, blue: 0.39),
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: size.width * 0.018 * pellet.scale, height: size.width * 0.018 * pellet.scale)
+                    .overlay {
+                        Circle()
+                            .stroke(Color.white.opacity(0.24), lineWidth: 0.5)
+                    }
+                    .opacity(0.18 + Double(min(max((pellet.scale - 0.16) / 0.84, 0), 1)) * 0.82)
+                    .position(
+                        x: size.width * pellet.xFraction,
+                        y: size.height * pellet.yFraction
+                    )
+                    .shadow(color: Color.black.opacity(0.12), radius: 2, y: 1)
+            }
+        }
+    }
+}
+
 private struct FishSprite: View {
     let species: FishSpecies
     let isMirrored: Bool
+    let vitality: Double
+    let isAlive: Bool
 
     var body: some View {
         let tailWidth = species.bodyWidth * 0.92 * species.tailScale
@@ -391,8 +561,8 @@ private struct FishSprite: View {
                 .fill(
                     LinearGradient(
                         colors: [
-                            species.palette[1].opacity(0.86),
-                            species.palette[2].opacity(0.16),
+                            species.palette[1].opacity(0.42 + vitality * 0.44),
+                            species.palette[2].opacity(0.10 + vitality * 0.12),
                         ],
                         startPoint: .leading,
                         endPoint: .trailing
@@ -406,9 +576,9 @@ private struct FishSprite: View {
                 .fill(
                     LinearGradient(
                         colors: [
-                            species.palette[0],
-                            species.palette[1],
-                            species.palette[2],
+                            species.palette[0].opacity(0.56 + vitality * 0.44),
+                            species.palette[1].opacity(0.52 + vitality * 0.48),
+                            species.palette[2].opacity(0.46 + vitality * 0.54),
                         ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
@@ -463,6 +633,7 @@ private struct FishSprite: View {
                     .offset(x: -4, y: species.bodyHeight * 0.96)
             }
         }
+        .saturation(isAlive ? 0.58 + vitality * 0.42 : 0.12)
         .scaleEffect(x: isMirrored ? -1 : 1, y: 1)
     }
 }

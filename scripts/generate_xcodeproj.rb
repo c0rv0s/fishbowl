@@ -30,6 +30,7 @@ app_sources = %w[
 
 shared_sources = %w[
   AquariumConfiguration.swift
+  BowlProfileStore.swift
   LiquidGlassBackground.swift
   AquariumSceneView.swift
 ].map { |path| shared_group.new_file(path) }
@@ -40,7 +41,9 @@ widget_sources = %w[
 ].map { |path| widget_group.new_file(path) }
 
 app_group.new_file('Info.plist')
+app_group.new_file('Fishbowl.entitlements')
 widget_group.new_file('Info.plist')
+widget_group.new_file('FishbowlWidgetExtension.entitlements')
 
 app_target.add_file_references(app_sources + shared_sources)
 widget_target.add_file_references(widget_sources + shared_sources)
@@ -55,6 +58,7 @@ app_target.build_configurations.each do |config|
     settings['GENERATE_INFOPLIST_FILE'] = 'NO'
     settings['CODE_SIGN_STYLE'] = 'Automatic'
     settings['SUPPORTED_PLATFORMS'] = 'iphoneos iphonesimulator'
+    settings['CODE_SIGN_ENTITLEMENTS'] = 'Fishbowl/App/Fishbowl.entitlements'
 end
 
 widget_target.build_configurations.each do |config|
@@ -70,6 +74,7 @@ widget_target.build_configurations.each do |config|
     settings['APPLICATION_EXTENSION_API_ONLY'] = 'YES'
     settings['SKIP_INSTALL'] = 'YES'
     settings['SUPPORTED_PLATFORMS'] = 'iphoneos iphonesimulator'
+    settings['CODE_SIGN_ENTITLEMENTS'] = 'FishbowlWidgetExtension/FishbowlWidgetExtension.entitlements'
 end
 
 project.build_configurations.each do |config|
