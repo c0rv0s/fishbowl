@@ -223,12 +223,20 @@ struct AquariumFoodPellet: Hashable, Identifiable, Sendable {
     let xFraction: CGFloat
     let yFraction: CGFloat
     let scale: CGFloat
+    let attraction: CGFloat
 
-    init(id: UUID = UUID(), xFraction: CGFloat, yFraction: CGFloat, scale: CGFloat) {
+    init(
+        id: UUID = UUID(),
+        xFraction: CGFloat,
+        yFraction: CGFloat,
+        scale: CGFloat,
+        attraction: CGFloat? = nil
+    ) {
         self.id = id
         self.xFraction = xFraction
         self.yFraction = yFraction
         self.scale = scale
+        self.attraction = attraction ?? scale
     }
 }
 

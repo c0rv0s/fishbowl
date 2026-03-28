@@ -1,10 +1,16 @@
 import SwiftUI
 
+private enum TankPageID: Hashable {
+    case profile(UUID)
+    case addSlot(Int)
+}
+
 struct ContentView: View {
     @StateObject private var studio = BowlStudio()
     @State private var composerDraft: BowlProfile?
     @State private var deletingProfile: BowlProfile?
     @State private var feedBurstsByProfileID: [UUID: [FeedBurst]] = [:]
+    @State private var currentPageID: TankPageID?
 
     var body: some View {
         NavigationStack {
@@ -14,6 +20,7 @@ struct ContentView: View {
                         ForEach(studio.profiles) { profile in
                             TankHomePage(
                                 profile: profile,
+                                isActive: currentPageID == .profile(profile.id),
                                 safeAreaInsets: geometry.safeAreaInsets,
                                 feedBursts: feedBurstsByProfileID[profile.id] ?? [],
                                 onFeed: { xFraction in
@@ -24,7 +31,7 @@ struct ContentView: View {
                                 }
                             )
                             .frame(width: geometry.size.width, height: geometry.size.height)
-                            .id(profile.id)
+                            .id(TankPageID.profile(profile.id))
                         }
 
                         if studio.canCreateProfile {
@@ -35,19 +42,21 @@ struct ContentView: View {
                                 composerDraft = studio.makeDraftProfile()
                             }
                             .frame(width: geometry.size.width, height: geometry.size.height)
-                            .id("add-slot-\(studio.profiles.count)")
+                            .id(TankPageID.addSlot(studio.profiles.count + 1))
                         }
                     }
                     .scrollTargetLayout()
                 }
                 .scrollTargetBehavior(.paging)
                 .scrollClipDisabled()
+                .scrollPosition(id: $currentPageID)
             }
             .navigationBarHidden(true)
         }
         .fullScreenCover(item: $composerDraft) { draft in
             TankComposerScreen(initialProfile: draft) { profile in
                 studio.addProfile(profile)
+                currentPageID = .profile(profile.id)
                 composerDraft = nil
             } onCancel: {
                 composerDraft = nil
@@ -78,6 +87,10 @@ struct ContentView: View {
         } message: { profile in
             Text("Remove \(profile.name) and free up this slot for a new tank.")
         }
+        .onAppear(perform: syncCurrentPageID)
+        .onChange(of: pageIDs) { _, _ in
+            syncCurrentPageID()
+        }
     }
 
     private func dropFood(in profile: BowlProfile, at xFraction: CGFloat) {
@@ -95,10 +108,32 @@ struct ContentView: View {
 
         studio.feedProfile(id: profile.id, at: now)
     }
+
+    private var pageIDs: [TankPageID] {
+        let profilePages = studio.profiles.map { TankPageID.profile($0.id) }
+        if studio.canCreateProfile {
+            return profilePages + [.addSlot(studio.profiles.count + 1)]
+        }
+        return profilePages
+    }
+
+    private func syncCurrentPageID() {
+        guard !pageIDs.isEmpty else {
+            currentPageID = nil
+            return
+        }
+
+        if let currentPageID, pageIDs.contains(currentPageID) {
+            return
+        }
+
+        currentPageID = pageIDs.first
+    }
 }
 
 private struct TankHomePage: View {
     let profile: BowlProfile
+    let isActive: Bool
     let safeAreaInsets: EdgeInsets
     let feedBursts: [FeedBurst]
     let onFeed: (CGFloat) -> Void
@@ -139,6 +174,7 @@ private struct TankHomePage: View {
                     profile: profile,
                     configuration: profile.configuration,
                     format: .widgetLarge,
+                    isAnimating: isActive,
                     feedBursts: feedBursts,
                     onFeed: onFeed
                 )
@@ -639,23 +675,24 @@ private struct AnimatedAquariumStage: View {
     let profile: BowlProfile
     let configuration: AquariumConfiguration
     let format: AquariumDisplayFormat
+    let isAnimating: Bool
     let feedBursts: [FeedBurst]
     let onFeed: (CGFloat) -> Void
 
+    private var restingPhase: Double {
+        Double(abs(profile.id.hashValue % 997)) / 47.0
+    }
+
     var body: some View {
         GeometryReader { geometry in
-            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: false)) { context in
-                let snapshot = profile.petSnapshot(at: context.date)
-                let pellets = visiblePellets(at: context.date)
-
-                AquariumSceneView(
-                    configuration: configuration,
-                    format: format,
-                    phase: context.date.timeIntervalSinceReferenceDate / 3.8,
-                    petSnapshot: snapshot,
-                    foodPellets: pellets
-                )
-                .drawingGroup(opaque: false)
+            Group {
+                if isAnimating {
+                    TimelineView(.animation(minimumInterval: 1.0 / 24.0, paused: false)) { context in
+                        liveScene(at: context.date)
+                    }
+                } else {
+                    restingScene
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .contentShape(Rectangle())
@@ -669,19 +706,41 @@ private struct AnimatedAquariumStage: View {
         }
     }
 
+    private func liveScene(at date: Date) -> some View {
+        AquariumSceneView(
+            configuration: configuration,
+            format: format,
+            phase: date.timeIntervalSinceReferenceDate / 4.1,
+            petSnapshot: profile.petSnapshot(at: date),
+            foodPellets: visiblePellets(at: date)
+        )
+    }
+
+    private var restingScene: some View {
+        AquariumSceneView(
+            configuration: configuration,
+            format: format,
+            phase: restingPhase,
+            petSnapshot: profile.petSnapshot(at: .now),
+            foodPellets: []
+        )
+    }
+
     private func visiblePellets(at date: Date) -> [AquariumFoodPellet] {
         feedBursts.flatMap { burst in
             let elapsed = date.timeIntervalSince(burst.startedAt)
             let dropDuration: TimeInterval = 1.15
             let grazeDuration: TimeInterval = 1.8
-            let releaseDuration: TimeInterval = 2.2
-            let totalDuration = dropDuration + grazeDuration + releaseDuration
+            let releaseDuration: TimeInterval = 1.6
+            let settleDuration: TimeInterval = 2.2
+            let totalDuration = dropDuration + grazeDuration + releaseDuration + settleDuration
             guard elapsed >= 0, elapsed <= totalDuration else { return [AquariumFoodPellet]() }
 
             let dropProgress = min(max(elapsed / dropDuration, 0), 1)
             let easedDrop = CGFloat(1 - pow(1 - dropProgress, 2))
             let grazeProgress = CGFloat(min(max((elapsed - dropDuration) / grazeDuration, 0), 1))
             let releaseProgress = CGFloat(min(max((elapsed - dropDuration - grazeDuration) / releaseDuration, 0), 1))
+            let settleProgress = CGFloat(min(max((elapsed - dropDuration - grazeDuration - releaseDuration) / settleDuration, 0), 1))
 
             return (0..<3).map { index in
                 let spread = CGFloat(index - 1) * 0.026
@@ -690,17 +749,25 @@ private struct AnimatedAquariumStage: View {
                 let restingY = min(0.76, 0.08 + restingDepth)
                 let y: CGFloat
                 let visibility: CGFloat
+                let attraction: CGFloat
 
                 if elapsed < dropDuration {
                     y = min(0.76, 0.08 + easedDrop * restingDepth)
                     visibility = 1.0
+                    attraction = 0.36 + dropProgress * 0.28
                 } else if elapsed < dropDuration + grazeDuration {
                     let bobAmount = 0.010 - grazeProgress * 0.004
                     y = restingY + CGFloat(sin(Double(grazeProgress) * .pi * 2 + Double(index) * 0.8)) * bobAmount
-                    visibility = 0.96 - grazeProgress * 0.30
-                } else {
+                    visibility = 0.96 - grazeProgress * 0.34
+                    attraction = 0.84 - grazeProgress * 0.08
+                } else if elapsed < dropDuration + grazeDuration + releaseDuration {
                     y = restingY + CGFloat(sin(Double(releaseProgress) * .pi * 2 + Double(index) * 0.7)) * 0.004
-                    visibility = max(0.02, (1.0 - releaseProgress) * (1.0 - releaseProgress) * 0.66)
+                    visibility = max(0.0, (1.0 - releaseProgress) * (1.0 - releaseProgress) * 0.48)
+                    attraction = max(0.18, pow(1.0 - releaseProgress, 1.15) * 0.68)
+                } else {
+                    y = restingY + CGFloat(sin(Double(settleProgress) * .pi * 1.6 + Double(index) * 0.7)) * 0.003
+                    visibility = 0.0
+                    attraction = max(0.01, pow(1.0 - settleProgress, 1.8) * 0.18)
                 }
 
                 let baseScale: CGFloat = index == 1 ? 1.0 : 0.84
@@ -708,7 +775,8 @@ private struct AnimatedAquariumStage: View {
                 return AquariumFoodPellet(
                     xFraction: x,
                     yFraction: y,
-                    scale: baseScale * visibility
+                    scale: baseScale * visibility,
+                    attraction: attraction
                 )
             }
         }
@@ -764,53 +832,56 @@ private struct AmbientScreenBackdrop: View {
         GeometryReader { geometry in
             let size = geometry.size
             let palette = configuration.ambientBackdropColors
+            let fieldYOffset = -size.height * 0.18
 
             ZStack {
                 Color.white
 
                 ZStack {
                     Ellipse()
-                        .fill(palette[0].opacity(0.18))
-                        .frame(width: size.width * 1.18, height: size.height * 0.58)
-                        .blur(radius: 118)
-                        .offset(x: -size.width * 0.22, y: size.height * 0.14)
+                        .fill(palette[0].opacity(0.08))
+                        .frame(width: size.width * 1.06, height: size.height * 0.46)
+                        .blur(radius: 96)
+                        .offset(x: -size.width * 0.20, y: size.height * 0.05)
 
                     Ellipse()
-                        .fill(palette[1].opacity(0.15))
-                        .frame(width: size.width * 1.12, height: size.height * 0.54)
-                        .blur(radius: 112)
-                        .offset(x: size.width * 0.22, y: size.height * 0.18)
+                        .fill(palette[1].opacity(0.07))
+                        .frame(width: size.width * 1.02, height: size.height * 0.44)
+                        .blur(radius: 90)
+                        .offset(x: size.width * 0.20, y: size.height * 0.08)
 
                     Ellipse()
-                        .fill(palette[2].opacity(0.13))
-                        .frame(width: size.width * 1.00, height: size.height * 0.50)
-                        .blur(radius: 102)
-                        .offset(x: 0, y: size.height * 0.30)
+                        .fill(palette[2].opacity(0.06))
+                        .frame(width: size.width * 0.90, height: size.height * 0.38)
+                        .blur(radius: 82)
+                        .offset(x: 0, y: size.height * 0.20)
 
                     RoundedRectangle(cornerRadius: size.width * 0.22, style: .continuous)
                         .fill(
                             LinearGradient(
                                 colors: [
-                                    palette[0].opacity(0.08),
-                                    palette[2].opacity(0.12),
-                                    palette[1].opacity(0.10),
+                                    palette[0].opacity(0.03),
+                                    palette[2].opacity(0.05),
+                                    palette[1].opacity(0.04),
                                 ],
                                 startPoint: .leading,
                                 endPoint: .trailing
                             )
                         )
-                        .frame(width: size.width * 1.18, height: size.height * 0.42)
-                        .blur(radius: 96)
-                        .offset(y: size.height * 0.26)
+                        .frame(width: size.width * 1.04, height: size.height * 0.30)
+                        .blur(radius: 72)
+                        .offset(y: size.height * 0.16)
                 }
+                .opacity(0.60)
+                .offset(y: fieldYOffset)
                 .mask {
                     LinearGradient(
                         stops: [
                             .init(color: .clear, location: 0.00),
-                            .init(color: .white.opacity(0.08), location: 0.06),
-                            .init(color: .white, location: 0.18),
-                            .init(color: .white, location: 0.82),
-                            .init(color: .white.opacity(0.10), location: 0.94),
+                            .init(color: .white.opacity(0.06), location: 0.08),
+                            .init(color: .white, location: 0.22),
+                            .init(color: .white, location: 0.72),
+                            .init(color: .white.opacity(0.08), location: 0.88),
                             .init(color: .clear, location: 1.00),
                         ],
                         startPoint: .top,
@@ -822,28 +893,28 @@ private struct AmbientScreenBackdrop: View {
                     LinearGradient(
                         colors: [
                             Color.white,
-                            Color.white.opacity(0.96),
-                            Color.white.opacity(0.24),
+                            Color.white.opacity(0.98),
+                            Color.white.opacity(0.40),
                             Color.clear,
                         ],
                         startPoint: .top,
                         endPoint: .bottom
                     )
-                    .frame(height: size.height * 0.24)
+                    .frame(height: size.height * 0.30)
 
                     Spacer(minLength: 0)
 
                     LinearGradient(
                         colors: [
                             Color.clear,
-                            Color.white.opacity(0.28),
-                            Color.white.opacity(0.96),
+                            Color.white.opacity(0.36),
+                            Color.white.opacity(0.98),
                             Color.white,
                         ],
                         startPoint: .top,
                         endPoint: .bottom
                     )
-                    .frame(height: size.height * 0.26)
+                    .frame(height: size.height * 0.30)
                 }
             }
             .ignoresSafeArea()

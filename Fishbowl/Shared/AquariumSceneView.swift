@@ -247,16 +247,17 @@ private struct AquariumInteriorView: View {
                     size: size
                 )
             } ?? idlePosition
+            let approachStrength = smoothStep(from: 0.0, to: 0.80, value: foodInterest)
             let foodOrbitPosition = CGPoint(
-                x: foodTarget.x + sweep * laneWidth * max(0.42, 0.68 - foodInterest * 0.18) * max(0.44, driftScale),
-                y: foodTarget.y + bob * verticalRange * max(0.34, 0.56 - foodInterest * 0.12) * max(0.44, driftScale)
+                x: foodTarget.x + sweep * laneWidth * max(0.12, 0.42 - approachStrength * 0.26) * max(0.38, driftScale),
+                y: foodTarget.y + bob * verticalRange * max(0.10, 0.30 - approachStrength * 0.18) * max(0.38, driftScale)
             )
             let livePosition = CGPoint(
-                x: idlePosition.x + (foodOrbitPosition.x - idlePosition.x) * foodInterest,
-                y: idlePosition.y + (foodOrbitPosition.y - idlePosition.y) * foodInterest
+                x: idlePosition.x + (foodOrbitPosition.x - idlePosition.x) * approachStrength,
+                y: idlePosition.y + (foodOrbitPosition.y - idlePosition.y) * approachStrength
             )
             let targetHeading = max(-1, min(1, Double((foodOrbitPosition.x - idlePosition.x) / max(size.width * 0.18, 1))))
-            let heading = idleHeading * Double(1 - foodInterest) + targetHeading * Double(foodInterest)
+            let heading = idleHeading * Double(1 - approachStrength) + targetHeading * Double(approachStrength)
             let deadPosition = CGPoint(
                 x: size.width * min(max(baseX[index], 0.28), 0.72),
                 y: size.height * (0.77 + CGFloat(index) * 0.04)
@@ -278,12 +279,12 @@ private struct AquariumInteriorView: View {
 
         let xFraction = foodPellets.map(\.xFraction).reduce(0, +) / CGFloat(foodPellets.count)
         let yFraction = foodPellets.map(\.yFraction).reduce(0, +) / CGFloat(foodPellets.count)
-        let scale = foodPellets.map(\.scale).reduce(0, +) / CGFloat(foodPellets.count)
+        let attraction = foodPellets.map(\.attraction).reduce(0, +) / CGFloat(foodPellets.count)
         let depthProgress = smoothStep(from: 0.18, to: 0.74, value: yFraction)
-        let freshness = smoothStep(from: 0.24, to: 1.0, value: scale)
-        let strength = min(0.70, depthProgress * (0.42 + freshness * 0.34))
+        let freshness = smoothStep(from: 0.02, to: 0.82, value: attraction)
+        let strength = min(0.90, depthProgress * freshness)
 
-        guard strength > 0.02 else { return nil }
+        guard strength > 0.008 else { return nil }
 
         return FoodResponse(
             anchor: CGPoint(
@@ -296,10 +297,10 @@ private struct AquariumInteriorView: View {
 
     private func foodTargetPosition(from anchor: CGPoint, index: Int, count: Int, size: CGSize) -> CGPoint {
         let centerOffset = CGFloat(index) - CGFloat(count - 1) * 0.5
-        let spread = size.width * (format == .widgetSmall ? 0.050 : 0.068)
+        let spread = size.width * (format == .widgetSmall ? 0.034 : 0.046)
         let x = min(max(anchor.x + centerOffset * spread, size.width * 0.18), size.width * 0.82)
         let y = min(
-            max(anchor.y - size.height * (0.08 + CGFloat(index % 2) * 0.03), size.height * 0.24),
+            max(anchor.y - size.height * (0.035 + CGFloat(index % 2) * 0.018), size.height * 0.24),
             size.height * 0.72
         )
         return CGPoint(x: x, y: y)
@@ -307,8 +308,8 @@ private struct AquariumInteriorView: View {
 
     private func interestStrength(_ base: CGFloat, index: Int, count: Int) -> CGFloat {
         let centerOffset = abs(CGFloat(index) - CGFloat(count - 1) * 0.5)
-        let taper = max(0.78, 1 - centerOffset * 0.12)
-        return min(0.72, base * taper)
+        let taper = max(0.82, 1 - centerOffset * 0.10)
+        return min(0.86, base * taper)
     }
 
     private func smoothStep(from lower: CGFloat, to upper: CGFloat, value: CGFloat) -> CGFloat {
@@ -398,10 +399,10 @@ private struct AquariumRefractionOverlay: View {
                             center: .center
                         )
                     )
-                    .frame(width: size.width * 1.1, height: size.width * 1.1)
-                    .blur(radius: size.width * 0.07)
-                    .offset(y: size.height * 0.32)
-                    .opacity(style == .orb ? 0.72 : 0.52)
+                    .frame(width: size.width * 1.02, height: size.width * 1.02)
+                    .blur(radius: size.width * 0.05)
+                    .offset(y: size.height * 0.16)
+                    .opacity(style == .orb ? 0.40 : 0.30)
                     .blendMode(.screen)
 
                 RoundedRectangle(cornerRadius: size.height * 0.2, style: .continuous)
@@ -533,7 +534,7 @@ private struct FoodPelletField: View {
                         Circle()
                             .stroke(Color.white.opacity(0.24), lineWidth: 0.5)
                     }
-                    .opacity(0.18 + Double(min(max((pellet.scale - 0.16) / 0.84, 0), 1)) * 0.82)
+                    .opacity(Double(min(max((pellet.scale - 0.04) / 0.80, 0), 1)) * 0.92)
                     .position(
                         x: size.width * pellet.xFraction,
                         y: size.height * pellet.yFraction
@@ -975,26 +976,26 @@ private struct IridescentMist: View {
 
             ZStack {
                 Circle()
-                    .fill(colors[0].opacity(0.38))
-                    .frame(width: size.width * 0.64, height: size.width * 0.64)
-                    .blur(radius: size.width * 0.11)
-                    .offset(x: -size.width * 0.32, y: size.height * 0.36)
+                    .fill(colors[0].opacity(0.24))
+                    .frame(width: size.width * 0.58, height: size.width * 0.58)
+                    .blur(radius: size.width * 0.08)
+                    .offset(x: -size.width * 0.28, y: size.height * 0.20)
 
                 Circle()
-                    .fill(colors[1].opacity(0.30))
-                    .frame(width: size.width * 0.62, height: size.width * 0.62)
-                    .blur(radius: size.width * 0.10)
-                    .offset(x: size.width * 0.28, y: size.height * 0.32)
+                    .fill(colors[1].opacity(0.19))
+                    .frame(width: size.width * 0.56, height: size.width * 0.56)
+                    .blur(radius: size.width * 0.07)
+                    .offset(x: size.width * 0.24, y: size.height * 0.18)
 
                 Circle()
-                    .fill(colors[2].opacity(0.24))
-                    .frame(width: size.width * 0.48, height: size.width * 0.48)
-                    .blur(radius: size.width * 0.09)
-                    .offset(x: 0, y: size.height * 0.10)
+                    .fill(colors[2].opacity(0.16))
+                    .frame(width: size.width * 0.42, height: size.width * 0.42)
+                    .blur(radius: size.width * 0.06)
+                    .offset(x: 0, y: size.height * 0.02)
 
                 LinearGradient(
                     colors: [
-                        Color.white.opacity(0.28),
+                        Color.white.opacity(0.22),
                         Color.clear,
                     ],
                     startPoint: .top,
