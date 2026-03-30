@@ -13,19 +13,22 @@ struct ContentView: View {
     @StateObject private var premiumStore = PremiumStore()
     @State private var composerDraft: BowlProfile?
     @State private var deletingProfile: BowlProfile?
-    @State private var feedBurstsByProfileID: [UUID: [FeedBurst]] = [:]
+    @State private var feedBurstsByProfileID: [UUID: [AquariumFeedBurst]] = [:]
     @State private var currentPageID: TankPageID?
     @State private var isPremiumSheetPresented = false
+    @State private var isScrollTransitioning = false
 
     var body: some View {
         NavigationStack {
             GeometryReader { geometry in
                 ScrollView(.vertical, showsIndicators: false) {
-                    LazyVStack(spacing: 0) {
+                    VStack(spacing: 0) {
                         ForEach(studio.profiles) { profile in
                             TankHomePage(
                                 profile: profile,
-                                isActive: currentPageID == .profile(profile.id),
+                                isFocused: currentPageID == .profile(profile.id),
+                                isLivePrepared: shouldPrepareLiveScene(for: profile.id),
+                                isScrollFrozen: isScrollTransitioning,
                                 safeAreaInsets: geometry.safeAreaInsets,
                                 feedBursts: feedBurstsByProfileID[profile.id] ?? [],
                                 onFeed: { xFraction in
@@ -66,6 +69,9 @@ struct ContentView: View {
                 .scrollTargetBehavior(.paging)
                 .scrollClipDisabled()
                 .scrollPosition(id: $currentPageID)
+                .onScrollPhaseChange { _, newPhase in
+                    isScrollTransitioning = newPhase != .idle
+                }
             }
             .navigationBarHidden(true)
         }
@@ -122,7 +128,7 @@ struct ContentView: View {
             .filter { now.timeIntervalSince($0.startedAt) < 1.6 }
 
         feedBurstsByProfileID[profile.id] = activeBursts + [
-            FeedBurst(startedAt: now, xFraction: clampedX)
+            AquariumFeedBurst(startedAt: now, xFraction: clampedX)
         ]
 
         studio.feedProfile(id: profile.id, at: now)
@@ -151,15 +157,21 @@ struct ContentView: View {
 
         currentPageID = pageIDs.first
     }
+
+    private func shouldPrepareLiveScene(for profileID: UUID) -> Bool {
+        studio.profiles.contains { $0.id == profileID }
+    }
 }
 
 private struct TankHomePage: View {
     @Environment(\.colorScheme) private var colorScheme
 
     let profile: BowlProfile
-    let isActive: Bool
+    let isFocused: Bool
+    let isLivePrepared: Bool
+    let isScrollFrozen: Bool
     let safeAreaInsets: EdgeInsets
-    let feedBursts: [FeedBurst]
+    let feedBursts: [AquariumFeedBurst]
     let onFeed: (CGFloat) -> Void
     let onDelete: () -> Void
     @State private var shareImage: UIImage?
@@ -208,7 +220,9 @@ private struct TankHomePage: View {
                     profile: profile,
                     configuration: profile.configuration,
                     format: .widgetLarge,
-                    isAnimating: isActive,
+                    isFocused: isFocused,
+                    isPrepared: isLivePrepared,
+                    isScrollFrozen: isScrollFrozen,
                     feedBursts: feedBursts,
                     onFeed: onFeed
                 )
@@ -1028,10 +1042,12 @@ private struct AnimatedAquariumStage: View {
     let profile: BowlProfile
     let configuration: AquariumConfiguration
     let format: AquariumDisplayFormat
-    let isAnimating: Bool
-    let feedBursts: [FeedBurst]
+    let isFocused: Bool
+    let isPrepared: Bool
+    let isScrollFrozen: Bool
+    let feedBursts: [AquariumFeedBurst]
     let onFeed: (CGFloat) -> Void
-    @State private var tapRipples: [TapRipple] = []
+    @State private var tapRipples: [AquariumTapRipple] = []
 
     private var restingPhase: Double {
         Double(abs(profile.id.hashValue % 997)) / 47.0
@@ -1040,9 +1056,33 @@ private struct AnimatedAquariumStage: View {
     var body: some View {
         GeometryReader { geometry in
             Group {
-                if isAnimating {
-                    TimelineView(.animation(minimumInterval: 1.0 / 20.0, paused: false)) { context in
-                        liveScene(at: context.date)
+                if isPrepared {
+                    ZStack {
+                        AquariumStaticBackdropView(
+                            configuration: configuration,
+                            format: format,
+                            phase: restingPhase,
+                            petSnapshot: profile.petSnapshot(at: .now),
+                            showsDecoration: configuration.decoration != .coralGarden
+                        )
+
+                        SpriteKitAquariumSceneView(
+                            profile: profile,
+                            configuration: configuration,
+                            format: format,
+                            feedBursts: feedBursts,
+                            tapRipples: tapRipples,
+                            phaseOffset: restingPhase,
+                            isPaused: !isFocused || isScrollFrozen
+                        )
+
+                        if configuration.decoration == .coralGarden {
+                            AquariumDecorationForegroundOverlayView(
+                                configuration: configuration,
+                                format: format,
+                                phase: restingPhase
+                            )
+                        }
                     }
                 } else {
                     restingScene
@@ -1059,88 +1099,14 @@ private struct AnimatedAquariumStage: View {
         }
     }
 
-    private func liveScene(at date: Date) -> some View {
-        ZStack {
-            AquariumSceneView(
-                configuration: configuration,
-                format: format,
-                phase: date.timeIntervalSinceReferenceDate / 4.1,
-                petSnapshot: profile.petSnapshot(at: date),
-                foodPellets: visiblePellets(at: date)
-            )
-
-            TapRippleOverlay(ripples: visibleRipples(at: date))
-        }
-    }
-
     private var restingScene: some View {
-        ZStack {
-            AquariumSceneView(
-                configuration: configuration,
-                format: format,
-                phase: restingPhase,
-                petSnapshot: profile.petSnapshot(at: .now),
-                foodPellets: []
-            )
-
-            TapRippleOverlay(ripples: [])
-        }
-    }
-
-    private func visiblePellets(at date: Date) -> [AquariumFoodPellet] {
-        feedBursts.flatMap { burst in
-            let elapsed = date.timeIntervalSince(burst.startedAt)
-            let dropDuration: TimeInterval = 1.15
-            let grazeDuration: TimeInterval = 1.8
-            let releaseDuration: TimeInterval = 1.6
-            let settleDuration: TimeInterval = 2.2
-            let totalDuration = dropDuration + grazeDuration + releaseDuration + settleDuration
-            guard elapsed >= 0, elapsed <= totalDuration else { return [AquariumFoodPellet]() }
-
-            let dropProgress = min(max(elapsed / dropDuration, 0), 1)
-            let easedDrop = CGFloat(1 - pow(1 - dropProgress, 2))
-            let grazeProgress = CGFloat(min(max((elapsed - dropDuration) / grazeDuration, 0), 1))
-            let releaseProgress = CGFloat(min(max((elapsed - dropDuration - grazeDuration) / releaseDuration, 0), 1))
-            let settleProgress = CGFloat(min(max((elapsed - dropDuration - grazeDuration - releaseDuration) / settleDuration, 0), 1))
-
-            return (0..<3).map { index in
-                let spread = CGFloat(index - 1) * 0.026
-                let x = min(max(burst.xFraction + spread, 0.18), 0.82)
-                let restingDepth = 0.50 + CGFloat(index) * 0.07
-                let restingY = min(0.76, 0.08 + restingDepth)
-                let y: CGFloat
-                let visibility: CGFloat
-                let attraction: CGFloat
-
-                if elapsed < dropDuration {
-                    y = min(0.76, 0.08 + easedDrop * restingDepth)
-                    visibility = 1.0
-                    attraction = 0.36 + dropProgress * 0.28
-                } else if elapsed < dropDuration + grazeDuration {
-                    let bobAmount = 0.010 - grazeProgress * 0.004
-                    y = restingY + CGFloat(sin(Double(grazeProgress) * .pi * 2 + Double(index) * 0.8)) * bobAmount
-                    visibility = 0.96 - grazeProgress * 0.34
-                    attraction = 0.84 - grazeProgress * 0.08
-                } else if elapsed < dropDuration + grazeDuration + releaseDuration {
-                    y = restingY + CGFloat(sin(Double(releaseProgress) * .pi * 2 + Double(index) * 0.7)) * 0.004
-                    visibility = max(0.0, (1.0 - releaseProgress) * (1.0 - releaseProgress) * 0.48)
-                    attraction = max(0.18, pow(1.0 - releaseProgress, 1.15) * 0.68)
-                } else {
-                    y = restingY + CGFloat(sin(Double(settleProgress) * .pi * 1.6 + Double(index) * 0.7)) * 0.003
-                    visibility = 0.0
-                    attraction = max(0.01, pow(1.0 - settleProgress, 1.8) * 0.18)
-                }
-
-                let baseScale: CGFloat = index == 1 ? 1.0 : 0.84
-
-                return AquariumFoodPellet(
-                    xFraction: x,
-                    yFraction: y,
-                    scale: baseScale * visibility,
-                    attraction: attraction
-                )
-            }
-        }
+        AquariumSceneView(
+            configuration: configuration,
+            format: format,
+            phase: restingPhase,
+            petSnapshot: profile.petSnapshot(at: .now),
+            foodPellets: []
+        )
     }
 
     private func registerInteraction(at location: CGPoint, in size: CGSize) {
@@ -1154,25 +1120,12 @@ private struct AnimatedAquariumStage: View {
 
         tapRipples = Array(
             (tapRipples.filter { now.timeIntervalSince($0.startedAt) < 1.2 } + [
-                TapRipple(startedAt: now, normalizedLocation: normalizedLocation)
+                AquariumTapRipple(startedAt: now, normalizedLocation: normalizedLocation)
             ])
             .suffix(6)
         )
 
         onFeed(normalizedLocation.x)
-    }
-
-    private func visibleRipples(at date: Date) -> [VisibleTapRipple] {
-        tapRipples.compactMap { ripple in
-            let elapsed = date.timeIntervalSince(ripple.startedAt)
-            guard elapsed >= 0, elapsed <= 1.18 else { return nil }
-
-            return VisibleTapRipple(
-                id: ripple.id,
-                normalizedLocation: ripple.normalizedLocation,
-                progress: CGFloat(min(max(elapsed / 1.18, 0), 1))
-            )
-        }
     }
 }
 
@@ -1910,64 +1863,6 @@ private enum PremiumStoreError: LocalizedError {
         case .failedVerification:
             return "The App Store could not verify that purchase."
         }
-    }
-}
-
-private struct FeedBurst: Identifiable {
-    let id = UUID()
-    let startedAt: Date
-    let xFraction: CGFloat
-}
-
-private struct TapRipple: Identifiable {
-    let id = UUID()
-    let startedAt: Date
-    let normalizedLocation: CGPoint
-}
-
-private struct VisibleTapRipple: Identifiable {
-    let id: UUID
-    let normalizedLocation: CGPoint
-    let progress: CGFloat
-}
-
-private struct TapRippleOverlay: View {
-    let ripples: [VisibleTapRipple]
-
-    var body: some View {
-        GeometryReader { geometry in
-            ForEach(ripples) { ripple in
-                let anchor = CGPoint(
-                    x: geometry.size.width * ripple.normalizedLocation.x,
-                    y: geometry.size.height * ripple.normalizedLocation.y
-                )
-                let expansion = ripple.progress
-                let opacity = 1 - expansion
-
-                ZStack {
-                    Circle()
-                        .stroke(Color.white.opacity(0.52 * opacity), lineWidth: 1.3)
-                        .frame(width: 18 + expansion * 92, height: 18 + expansion * 92)
-
-                    Circle()
-                        .stroke(Color.white.opacity(0.20 * opacity), lineWidth: 0.8)
-                        .frame(width: 14 + expansion * 54, height: 14 + expansion * 54)
-
-                    ForEach(0..<3, id: \.self) { index in
-                        let bubbleSize = max(2.6, 6 - expansion * 2.2 + CGFloat(index))
-                        let bubbleX = CGFloat(index - 1) * (10 + expansion * 8)
-                        let bubbleY = -14 - expansion * (18 + CGFloat(index) * 8)
-
-                        Circle()
-                            .fill(Color.white.opacity(0.22 * opacity))
-                            .frame(width: bubbleSize, height: bubbleSize)
-                            .offset(x: bubbleX, y: bubbleY)
-                    }
-                }
-                .position(anchor)
-            }
-        }
-        .allowsHitTesting(false)
     }
 }
 

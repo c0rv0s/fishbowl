@@ -1,4 +1,37 @@
 import SwiftUI
+#if canImport(SpriteKit)
+import SpriteKit
+#endif
+#if canImport(MetalKit)
+import MetalKit
+#endif
+#if canImport(UIKit)
+import UIKit
+#endif
+
+struct AquariumFeedBurst: Identifiable, Hashable, Sendable {
+    let id: UUID
+    let startedAt: Date
+    let xFraction: CGFloat
+
+    init(id: UUID = UUID(), startedAt: Date, xFraction: CGFloat) {
+        self.id = id
+        self.startedAt = startedAt
+        self.xFraction = xFraction
+    }
+}
+
+struct AquariumTapRipple: Identifiable, Hashable, Sendable {
+    let id: UUID
+    let startedAt: Date
+    let normalizedLocation: CGPoint
+
+    init(id: UUID = UUID(), startedAt: Date, normalizedLocation: CGPoint) {
+        self.id = id
+        self.startedAt = startedAt
+        self.normalizedLocation = normalizedLocation
+    }
+}
 
 struct AquariumSceneView: View {
     let configuration: AquariumConfiguration
@@ -132,6 +165,19 @@ private struct AquariumInteriorView: View {
                 IridescentMist(colors: sceneAccentColors + sceneTone.accentColors)
                     .opacity((petSnapshot.isAlive ? 0.72 + petSnapshot.colorStrength * 0.28 : 0.46) * sceneTone.mistStrength)
 
+                AquariumCausticPrismField(
+                    colors: sceneAccentColors + sceneTone.accentColors,
+                    phase: phase
+                )
+                .opacity(sceneTone == .night ? 0.18 : 0.28)
+                .blendMode(.screen)
+                .mask(
+                    WaterSurfaceShape(
+                        level: waterLevel,
+                        waveShift: 0.02 * sin(phase * 1.7)
+                    )
+                )
+
                 WaterSurfaceShape(
                     level: waterLevel,
                     waveShift: 0.02 * sin(phase * 1.7)
@@ -150,6 +196,9 @@ private struct AquariumInteriorView: View {
                 )
                 .stroke(Color.white.opacity(0.34), lineWidth: 1)
                 .blur(radius: 0.6)
+
+                AquariumWaterlineSheen(level: waterLevel)
+                    .opacity(sceneTone == .night ? 0.22 : 0.34)
 
                 ZStack {
                     BubbleField(
@@ -768,7 +817,7 @@ private struct ThoughtLayout {
     let pointsToTrailing: Bool
 }
 
-private enum RareVisitorKind {
+private enum RareVisitorKind: Hashable {
     case moonJelly
     case seaAngel
 }
@@ -887,6 +936,19 @@ private enum AquariumSceneTone: Equatable {
 
     var motionScale: Double {
         self == .night ? 0.88 : 1.0
+    }
+
+    var hashToken: Int {
+        switch self {
+        case .dawn:
+            return 0
+        case .day:
+            return 1
+        case .dusk:
+            return 2
+        case .night:
+            return 3
+        }
     }
 }
 
@@ -2385,6 +2447,112 @@ private struct IridescentMist: View {
     }
 }
 
+private struct AquariumCausticPrismField: View {
+    let colors: [Color]
+    let phase: Double
+
+    var body: some View {
+        GeometryReader { geometry in
+            let size = geometry.size
+            let lead = colors[0]
+            let mid = colors[1]
+            let accent = colors[2]
+
+            ZStack {
+                Ellipse()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.34),
+                                lead.opacity(0.20),
+                                Color.clear,
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(width: size.width * 0.62, height: size.height * 0.14)
+                    .rotationEffect(.degrees(-12))
+                    .offset(x: -size.width * 0.10, y: -size.height * 0.08)
+
+                Ellipse()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                mid.opacity(0.20),
+                                accent.opacity(0.15),
+                                Color.clear,
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(width: size.width * 0.50, height: size.height * 0.12)
+                    .rotationEffect(.degrees(18))
+                    .offset(
+                        x: size.width * 0.18,
+                        y: size.height * (-0.01 + CGFloat(sin(phase * 0.7)) * 0.01)
+                    )
+
+                Capsule(style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.26),
+                                Color.white.opacity(0.02),
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(width: size.width * 0.54, height: size.height * 0.018)
+                    .blur(radius: 8)
+                    .offset(
+                        x: size.width * (0.02 + CGFloat(sin(phase * 0.9)) * 0.015),
+                        y: -size.height * 0.12
+                    )
+            }
+            .blur(radius: size.width * 0.012)
+        }
+    }
+}
+
+private struct AquariumWaterlineSheen: View {
+    let level: CGFloat
+
+    var body: some View {
+        GeometryReader { geometry in
+            let size = geometry.size
+            let y = size.height * (1 - level)
+
+            ZStack {
+                Capsule(style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.44),
+                                Color.white.opacity(0.02),
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(width: size.width * 0.72, height: max(2, size.height * 0.020))
+                    .blur(radius: 10)
+                    .position(x: size.width * 0.48, y: y - size.height * 0.030)
+
+                Ellipse()
+                    .fill(Color.white.opacity(0.30))
+                    .frame(width: size.width * 0.11, height: size.height * 0.028)
+                    .blur(radius: 5)
+                    .position(x: size.width * 0.22, y: y - size.height * 0.045)
+            }
+            .blendMode(.screen)
+        }
+        .allowsHitTesting(false)
+    }
+}
+
 private struct WaterSurfaceShape: Shape {
     let level: CGFloat
     let waveShift: CGFloat
@@ -2580,3 +2748,2387 @@ private struct AquariumBodyShape: InsettableShape {
         AquariumBodyShape(style: style, insetAmount: insetAmount + amount)
     }
 }
+
+#if canImport(SpriteKit) && canImport(UIKit)
+struct SpriteKitAquariumSceneView: View {
+    let profile: BowlProfile
+    let configuration: AquariumConfiguration
+    let format: AquariumDisplayFormat
+    let feedBursts: [AquariumFeedBurst]
+    let tapRipples: [AquariumTapRipple]
+    let phaseOffset: Double
+    let isPaused: Bool
+
+    var body: some View {
+        GeometryReader { _ in
+            AquariumSpriteRepresentable(
+                profile: profile,
+                configuration: configuration,
+                format: format,
+                feedBursts: feedBursts,
+                tapRipples: tapRipples,
+                phaseOffset: phaseOffset,
+                isPaused: isPaused
+            )
+            .padding(format.bodyInset)
+            .clipShape(AquariumBodyShape(style: configuration.vesselStyle))
+        }
+        .aspectRatio(format.aspectRatio, contentMode: .fit)
+    }
+}
+
+private struct AquariumSpriteRepresentable: UIViewRepresentable {
+    let profile: BowlProfile
+    let configuration: AquariumConfiguration
+    let format: AquariumDisplayFormat
+    let feedBursts: [AquariumFeedBurst]
+    let tapRipples: [AquariumTapRipple]
+    let phaseOffset: Double
+    let isPaused: Bool
+
+    func makeCoordinator() -> AquariumSpriteCoordinator {
+        AquariumSpriteCoordinator(
+            profile: profile,
+            configuration: configuration,
+            format: format,
+            feedBursts: feedBursts,
+            tapRipples: tapRipples,
+            phaseOffset: phaseOffset
+        )
+    }
+
+    func makeUIView(context: Context) -> SKView {
+        let view = SKView(frame: .zero)
+        view.allowsTransparency = true
+        view.backgroundColor = .clear
+        view.isOpaque = false
+        view.ignoresSiblingOrder = true
+        view.shouldCullNonVisibleNodes = true
+        view.preferredFramesPerSecond = 60
+        view.isPaused = isPaused
+        context.coordinator.attach(view: view)
+        return view
+    }
+
+    func updateUIView(_ uiView: SKView, context: Context) {
+        context.coordinator.update(
+            profile: profile,
+            configuration: configuration,
+            format: format,
+            feedBursts: feedBursts,
+            tapRipples: tapRipples,
+            phaseOffset: phaseOffset,
+            isPaused: isPaused,
+            view: uiView
+        )
+    }
+}
+
+private final class AquariumSpriteCoordinator {
+    let scene: AquariumSpriteScene
+
+    init(
+        profile: BowlProfile,
+        configuration: AquariumConfiguration,
+        format: AquariumDisplayFormat,
+        feedBursts: [AquariumFeedBurst],
+        tapRipples: [AquariumTapRipple],
+        phaseOffset: Double
+    ) {
+        scene = AquariumSpriteScene(
+            profile: profile,
+            configuration: configuration,
+            format: format,
+            feedBursts: feedBursts,
+            tapRipples: tapRipples,
+            phaseOffset: phaseOffset
+        )
+    }
+
+    func attach(view: SKView) {
+        scene.scaleMode = .resizeFill
+        scene.backgroundColor = .clear
+        scene.size = view.bounds.size
+        if view.scene !== scene {
+            view.presentScene(scene)
+        }
+    }
+
+    func update(
+        profile: BowlProfile,
+        configuration: AquariumConfiguration,
+        format: AquariumDisplayFormat,
+        feedBursts: [AquariumFeedBurst],
+        tapRipples: [AquariumTapRipple],
+        phaseOffset: Double,
+        isPaused: Bool,
+        view: SKView
+    ) {
+        scene.apply(
+            profile: profile,
+            configuration: configuration,
+            format: format,
+            feedBursts: feedBursts,
+            tapRipples: tapRipples,
+            phaseOffset: phaseOffset
+        )
+        scene.setRenderPaused(isPaused)
+        view.isPaused = isPaused
+        view.preferredFramesPerSecond = isPaused ? 30 : min(60, view.window?.windowScene?.screen.maximumFramesPerSecond ?? 60)
+        scene.size = view.bounds.size
+        if view.scene !== scene {
+            view.presentScene(scene)
+        }
+    }
+}
+
+private final class AquariumSpriteScene: SKScene {
+    private static var bubbleTextureCache: [Int: SKTexture] = [:]
+    private static var pelletTextureCache: [Int: SKTexture] = [:]
+    private static var rippleTextureCache: [Int: SKTexture] = [:]
+    private static var fishTextureCache: [AquariumSpriteFishTextureKey: SKTexture] = [:]
+    private static var companionTextureCache: [AquariumSpriteCompanionTextureKey: SKTexture] = [:]
+    private static var visitorTextureCache: [AquariumSpriteVisitorTextureKey: SKTexture] = [:]
+    private static var thoughtTextureCache: [AquariumSpriteThoughtTextureKey: SKTexture] = [:]
+
+    private var profile: BowlProfile
+    private var configuration: AquariumConfiguration
+    private var format: AquariumDisplayFormat
+    private var feedBursts: [AquariumFeedBurst]
+    private var tapRipples: [AquariumTapRipple]
+    private var phaseOffset: Double
+
+    private var lastTextureSignature: AquariumSpriteTextureSignature?
+    private var bubbleTexture: SKTexture?
+    private var pelletTexture: SKTexture?
+    private var rippleTexture: SKTexture?
+    private var fishTextures: [FishSpecies: SKTexture] = [:]
+    private var companionTextures: [CompanionStyle: SKTexture] = [:]
+    private var visitorTextures: [RareVisitorKind: SKTexture] = [:]
+    private var thoughtTextures: [String: SKTexture] = [:]
+
+    private var bubbleNodes: [SKSpriteNode] = []
+    private var pelletNodes: [SKSpriteNode] = []
+    private var rippleNodes: [AquariumSpriteRippleNode] = []
+    private var fishNodes: [SKSpriteNode] = []
+    private var companionNode: SKSpriteNode?
+    private var visitorNode: SKSpriteNode?
+    private var fishThoughtNodes: [SKSpriteNode] = []
+    private var visitorThoughtNode: SKSpriteNode?
+    private var animationElapsed: TimeInterval = 0
+    private var lastUpdateTimestamp: TimeInterval?
+    private var renderPaused = false
+
+    init(
+        profile: BowlProfile,
+        configuration: AquariumConfiguration,
+        format: AquariumDisplayFormat,
+        feedBursts: [AquariumFeedBurst],
+        tapRipples: [AquariumTapRipple],
+        phaseOffset: Double
+    ) {
+        self.profile = profile
+        self.configuration = configuration
+        self.format = format
+        self.feedBursts = feedBursts
+        self.tapRipples = tapRipples
+        self.phaseOffset = phaseOffset
+        super.init(size: .zero)
+        scaleMode = .resizeFill
+        backgroundColor = .clear
+    }
+
+    @available(*, unavailable)
+    required init?(coder aDecoder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func apply(
+        profile: BowlProfile,
+        configuration: AquariumConfiguration,
+        format: AquariumDisplayFormat,
+        feedBursts: [AquariumFeedBurst],
+        tapRipples: [AquariumTapRipple],
+        phaseOffset: Double
+    ) {
+        self.profile = profile
+        self.configuration = configuration
+        self.format = format
+        self.feedBursts = feedBursts
+        self.tapRipples = tapRipples
+        self.phaseOffset = phaseOffset
+        rebuildTexturesIfNeeded(scale: effectiveScale)
+    }
+
+    func setRenderPaused(_ paused: Bool) {
+        if renderPaused != paused, !paused {
+            lastUpdateTimestamp = nil
+        }
+        renderPaused = paused
+        isPaused = paused
+    }
+
+    override func didMove(to view: SKView) {
+        backgroundColor = .clear
+        scaleMode = .resizeFill
+    }
+
+    override func didChangeSize(_ oldSize: CGSize) {
+        super.didChangeSize(oldSize)
+        rebuildTexturesIfNeeded(scale: effectiveScale)
+    }
+
+    override func update(_ currentTime: TimeInterval) {
+        guard size.width > 1, size.height > 1 else { return }
+
+        rebuildTexturesIfNeeded(scale: effectiveScale)
+
+        if let lastUpdateTimestamp {
+            let delta = max(0, min(currentTime - lastUpdateTimestamp, 1.0 / 20.0))
+            animationElapsed += delta
+        }
+        lastUpdateTimestamp = currentTime
+
+        let now = Date.now
+        let phase = animationElapsed / 4.1 + phaseOffset
+        let snapshot = profile.petSnapshot(at: now)
+        let resolver = AquariumMetalMotionResolver(
+            configuration: configuration,
+            format: format,
+            phase: phase,
+            petSnapshot: snapshot,
+            feedBursts: feedBursts,
+            tapRipples: tapRipples,
+            size: size
+        )
+
+        syncBubbles(with: resolver.bubbles())
+        syncRipples(with: resolver.ripples())
+        syncPellets(with: resolver.foodPellets())
+        syncVisitor(with: resolver.rareVisitor())
+        syncCompanion(with: resolver.companionLayout(), size: resolver.companionRenderSize())
+        syncFish(with: resolver.fishLayouts(), using: resolver, snapshot: snapshot)
+        syncFishThoughts(with: resolver.fishThoughtBubbles())
+        syncVisitorThought(with: resolver.visitorThoughtBubble())
+    }
+
+    private func rebuildTexturesIfNeeded(scale: CGFloat) {
+        let scaleBucket = Int(max(2, scale) * 10)
+        let signature = AquariumSpriteTextureSignature(
+            configuration: configuration,
+            scaleBucket: scaleBucket
+        )
+        guard signature != lastTextureSignature else { return }
+
+        let resolvedScale = max(2, scale)
+
+        guard
+            let nextBubbleTexture = Self.cachedTexture(
+                cache: &Self.bubbleTextureCache,
+                key: scaleBucket,
+                build: { [self] in
+                    makeTexture(size: CGSize(width: 26, height: 26), scale: resolvedScale, content: {
+                        AquariumMetalBubbleSpriteView()
+                    })
+                }
+            ),
+            let nextPelletTexture = Self.cachedTexture(
+                cache: &Self.pelletTextureCache,
+                key: scaleBucket,
+                build: { [self] in
+                    makeTexture(size: CGSize(width: 16, height: 16), scale: resolvedScale, content: {
+                        AquariumMetalPelletSpriteView()
+                    })
+                }
+            ),
+            let nextRippleTexture = Self.cachedTexture(
+                cache: &Self.rippleTextureCache,
+                key: scaleBucket,
+                build: { [self] in
+                    makeTexture(size: CGSize(width: 120, height: 120), scale: resolvedScale, content: {
+                        AquariumMetalRippleSpriteView()
+                    })
+                }
+            )
+        else {
+            return
+        }
+
+        var nextFishTextures: [FishSpecies: SKTexture] = [:]
+        for species in configuration.uniqueFishSpecies {
+            let key = AquariumSpriteFishTextureKey(species: species, scaleBucket: scaleBucket)
+            if let texture = Self.cachedTexture(
+                cache: &Self.fishTextureCache,
+                key: key,
+                build: { [self] in
+                    let canvas = AquariumMetalMotionResolver.textureCanvasSize(for: species)
+                    return makeTexture(size: canvas, scale: resolvedScale, content: {
+                        FishSprite(
+                            species: species,
+                            isMirrored: false,
+                            vitality: 1,
+                            isAlive: true
+                        )
+                        .frame(width: canvas.width, height: canvas.height)
+                    })
+                }
+            ) {
+                nextFishTextures[species] = texture
+            }
+        }
+        guard nextFishTextures.count == configuration.uniqueFishSpecies.count else {
+            return
+        }
+
+        var nextCompanionTextures: [CompanionStyle: SKTexture] = [:]
+        if configuration.companion != .none {
+            let key = AquariumSpriteCompanionTextureKey(
+                configurationHash: configuration.hashValue,
+                companion: configuration.companion,
+                scaleBucket: scaleBucket
+            )
+            if let texture = Self.cachedTexture(
+                cache: &Self.companionTextureCache,
+                key: key,
+                build: { [self] in
+                    let canvas = AquariumMetalMotionResolver.textureCanvasSize(for: configuration.companion)
+                    return makeTexture(size: canvas, scale: resolvedScale, content: {
+                        AquariumMetalCompanionSnapshotView(
+                            configuration: configuration,
+                            canvasSize: canvas
+                        )
+                    })
+                }
+            ) {
+                nextCompanionTextures[configuration.companion] = texture
+            } else {
+                return
+            }
+        }
+
+        var nextVisitorTextures: [RareVisitorKind: SKTexture] = [:]
+        if let moonJellyTexture = Self.cachedTexture(
+            cache: &Self.visitorTextureCache,
+            key: AquariumSpriteVisitorTextureKey(kind: .moonJelly, scaleBucket: scaleBucket),
+            build: { [self] in
+                makeTexture(size: CGSize(width: 36, height: 42), scale: resolvedScale, content: {
+                    MoonJellyVisitor()
+                        .frame(width: 36, height: 42)
+                })
+            }
+        ) {
+            nextVisitorTextures[.moonJelly] = moonJellyTexture
+        }
+        if let seaAngelTexture = Self.cachedTexture(
+            cache: &Self.visitorTextureCache,
+            key: AquariumSpriteVisitorTextureKey(kind: .seaAngel, scaleBucket: scaleBucket),
+            build: { [self] in
+                makeTexture(size: CGSize(width: 34, height: 28), scale: resolvedScale, content: {
+                    SeaAngelVisitor()
+                        .frame(width: 34, height: 28)
+                })
+            }
+        ) {
+            nextVisitorTextures[.seaAngel] = seaAngelTexture
+        }
+
+        var nextThoughtTextures: [String: SKTexture] = [:]
+        let thoughtTexts = ["🍽️", "😫", "🥺", "🍤", "💤", "✨", "⚡️", "🌙", "🫧", "💭", "☁️", "🪽"]
+        for text in thoughtTexts {
+            for pointsToTrailing in [false, true] {
+                let key = "\(text)|\(pointsToTrailing)"
+                let cacheKey = AquariumSpriteThoughtTextureKey(
+                    text: text,
+                    pointsToTrailing: pointsToTrailing,
+                    scaleBucket: scaleBucket
+                )
+                if let texture = Self.cachedTexture(
+                    cache: &Self.thoughtTextureCache,
+                    key: cacheKey,
+                    build: { [self] in
+                        makeTexture(size: CGSize(width: 56, height: 34), scale: resolvedScale, content: {
+                            ThoughtBubble(text: text, pointsToTrailing: pointsToTrailing)
+                                .frame(width: 56, height: 34)
+                        })
+                    }
+                ) {
+                    nextThoughtTextures[key] = texture
+                }
+            }
+        }
+
+        bubbleTexture = nextBubbleTexture
+        pelletTexture = nextPelletTexture
+        rippleTexture = nextRippleTexture
+        fishTextures = nextFishTextures
+        companionTextures = nextCompanionTextures
+        visitorTextures = nextVisitorTextures
+        thoughtTextures = nextThoughtTextures
+        lastTextureSignature = signature
+
+        // Force node textures to refresh immediately when the tank config changes.
+        for node in bubbleNodes {
+            node.texture = bubbleTexture
+        }
+        for node in pelletNodes {
+            node.texture = pelletTexture
+        }
+        for node in rippleNodes {
+            node.updateTextures(ringTexture: rippleTexture, bubbleTexture: bubbleTexture)
+        }
+    }
+
+    private var effectiveScale: CGFloat {
+        view?.window?.screen.scale ?? view?.contentScaleFactor ?? 3
+    }
+
+    private func syncBubbles(with bubbles: [AquariumDynamicBubble]) {
+        syncNodeCount(&bubbleNodes, desiredCount: bubbles.count) {
+            let node = SKSpriteNode(texture: bubbleTexture)
+            node.zPosition = 10
+            return node
+        }
+
+        for (index, bubble) in bubbles.enumerated() {
+            let node = bubbleNodes[index]
+            node.texture = bubbleTexture
+            node.position = scenePoint(from: bubble.position)
+            node.size = CGSize(width: bubble.size, height: bubble.size)
+            node.alpha = bubble.opacity
+            node.isHidden = false
+        }
+    }
+
+    private func syncPellets(with pellets: [AquariumFoodPellet]) {
+        let visiblePellets = pellets.filter { $0.scale > 0.001 }
+        syncNodeCount(&pelletNodes, desiredCount: visiblePellets.count) {
+            let node = SKSpriteNode(texture: pelletTexture)
+            node.zPosition = 22
+            return node
+        }
+
+        for (index, pellet) in visiblePellets.enumerated() {
+            let node = pelletNodes[index]
+            let pelletSize = 9 * pellet.scale
+            node.texture = pelletTexture
+            node.position = scenePoint(
+                from: CGPoint(x: size.width * pellet.xFraction, y: size.height * pellet.yFraction)
+            )
+            node.size = CGSize(width: pelletSize, height: pelletSize)
+            node.alpha = min(1, pellet.scale * 1.3)
+            node.isHidden = false
+        }
+    }
+
+    private func syncRipples(with ripples: [AquariumVisibleTapRipple]) {
+        syncNodeCount(&rippleNodes, desiredCount: ripples.count) {
+            let node = AquariumSpriteRippleNode(ringTexture: rippleTexture, bubbleTexture: bubbleTexture)
+            node.zPosition = 12
+            return node
+        }
+
+        for (index, ripple) in ripples.enumerated() {
+            rippleNodes[index].update(ripple: ripple, sceneHeight: size.height)
+        }
+    }
+
+    private func syncVisitor(with visitor: RareVisitorLayout?) {
+        guard let visitor else {
+            visitorNode?.removeFromParent()
+            visitorNode = nil
+            return
+        }
+
+        let texture = visitorTextures[visitor.kind]
+        let node: SKSpriteNode
+
+        if let existing = visitorNode {
+            node = existing
+        } else {
+            node = SKSpriteNode(texture: texture)
+            node.zPosition = 28
+            addChild(node)
+            visitorNode = node
+        }
+
+        node.texture = texture
+        node.position = scenePoint(from: visitor.position)
+        node.size = visitor.kind == .moonJelly
+        ? CGSize(width: 30 * visitor.scale, height: 36 * visitor.scale)
+        : CGSize(width: 28 * visitor.scale, height: 22 * visitor.scale)
+        node.alpha = 1
+        node.isHidden = false
+    }
+
+    private func syncCompanion(with layout: CompanionLayout, size renderSize: CGSize) {
+        guard configuration.companion != .none,
+              let texture = companionTextures[configuration.companion]
+        else {
+            companionNode?.removeFromParent()
+            companionNode = nil
+            return
+        }
+
+        let node: SKSpriteNode
+        if let existing = companionNode {
+            node = existing
+        } else {
+            node = SKSpriteNode(texture: texture)
+            node.zPosition = 30
+            addChild(node)
+            companionNode = node
+        }
+
+        node.texture = texture
+        node.position = scenePoint(from: layout.position)
+        node.size = renderSize
+        node.zRotation = -CGFloat(layout.rotation) * .pi / 180
+        node.xScale = layout.isMirrored ? -1 : 1
+        node.yScale = 1
+        node.alpha = 1
+        node.isHidden = false
+    }
+
+    private func syncFish(
+        with layouts: [FishLayout],
+        using resolver: AquariumMetalMotionResolver,
+        snapshot: AquariumPetSnapshot
+    ) {
+        syncNodeCount(&fishNodes, desiredCount: layouts.count) {
+            let node = SKSpriteNode(color: .clear, size: .zero)
+            node.zPosition = 32
+            return node
+        }
+
+        for (index, layout) in layouts.enumerated() {
+            let node = fishNodes[index]
+            let frame = resolver.fishRenderRect(for: layout)
+            let center = CGPoint(x: frame.midX, y: frame.midY)
+            node.texture = fishTextures[layout.species]
+            node.position = scenePoint(from: center)
+            node.size = frame.size
+            node.zRotation = -CGFloat(layout.rotation) * .pi / 180
+            node.alpha = snapshot.isAlive ? 1 : 0.62
+            node.color = UIColor(white: snapshot.colorStrength, alpha: 1)
+            node.colorBlendFactor = snapshot.isAlive ? 0 : 0.18
+            node.xScale = layout.isMirrored ? -1 : 1
+            node.yScale = 1
+            node.isHidden = false
+        }
+    }
+
+    private func syncFishThoughts(with thoughts: [ThoughtLayout]) {
+        syncNodeCount(&fishThoughtNodes, desiredCount: thoughts.count) {
+            let node = SKSpriteNode(color: .clear, size: CGSize(width: 42, height: 28))
+            node.zPosition = 40
+            return node
+        }
+
+        for (index, thought) in thoughts.enumerated() {
+            let node = fishThoughtNodes[index]
+            node.texture = thoughtTextures["\(thought.text)|\(thought.pointsToTrailing)"]
+            node.position = scenePoint(from: thought.position)
+            node.size = CGSize(width: 42, height: 28)
+            node.alpha = 1
+            node.isHidden = false
+        }
+    }
+
+    private func syncVisitorThought(with thought: ThoughtLayout?) {
+        guard let thought else {
+            visitorThoughtNode?.removeFromParent()
+            visitorThoughtNode = nil
+            return
+        }
+
+        let node: SKSpriteNode
+        if let existing = visitorThoughtNode {
+            node = existing
+        } else {
+            node = SKSpriteNode(color: .clear, size: CGSize(width: 42, height: 28))
+            node.zPosition = 41
+            addChild(node)
+            visitorThoughtNode = node
+        }
+
+        node.texture = thoughtTextures["\(thought.text)|\(thought.pointsToTrailing)"]
+        node.position = scenePoint(from: thought.position)
+        node.size = CGSize(width: 42, height: 28)
+        node.alpha = 1
+        node.isHidden = false
+    }
+
+    private func scenePoint(from point: CGPoint) -> CGPoint {
+        CGPoint(x: point.x, y: size.height - point.y)
+    }
+
+    private func syncNodeCount<T: SKNode>(
+        _ nodes: inout [T],
+        desiredCount: Int,
+        create: () -> T
+    ) {
+        while nodes.count < desiredCount {
+            let node = create()
+            addChild(node)
+            nodes.append(node)
+        }
+
+        while nodes.count > desiredCount {
+            let node = nodes.removeLast()
+            node.removeFromParent()
+        }
+    }
+
+    private func makeTexture<V: View>(size: CGSize, scale: CGFloat, @ViewBuilder content: () -> V) -> SKTexture? {
+        let snapshotContent = content()
+            .frame(width: size.width, height: size.height)
+
+        let renderer = ImageRenderer(content: snapshotContent)
+        renderer.scale = scale
+        renderer.proposedSize = ProposedViewSize(size)
+
+        guard let image = renderer.uiImage else { return nil }
+
+        let texture = SKTexture(image: image)
+        texture.filteringMode = .linear
+        return texture
+    }
+
+    private static func cachedTexture<K: Hashable>(
+        cache: inout [K: SKTexture],
+        key: K,
+        build: () -> SKTexture?
+    ) -> SKTexture? {
+        if let texture = cache[key] {
+            return texture
+        }
+
+        guard let texture = build() else {
+            return nil
+        }
+
+        cache[key] = texture
+        return texture
+    }
+}
+
+private final class AquariumSpriteRippleNode: SKNode {
+    private let ringNode: SKSpriteNode
+    private let bubbleNodes: [SKSpriteNode]
+
+    init(ringTexture: SKTexture?, bubbleTexture: SKTexture?) {
+        ringNode = SKSpriteNode(texture: ringTexture)
+        ringNode.zPosition = 0
+
+        bubbleNodes = (0..<3).map { _ in
+            let node = SKSpriteNode(texture: bubbleTexture)
+            node.zPosition = 1
+            return node
+        }
+
+        super.init()
+        isUserInteractionEnabled = false
+        addChild(ringNode)
+        bubbleNodes.forEach(addChild)
+    }
+
+    @available(*, unavailable)
+    required init?(coder aDecoder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func updateTextures(ringTexture: SKTexture?, bubbleTexture: SKTexture?) {
+        ringNode.texture = ringTexture
+        for node in bubbleNodes {
+            node.texture = bubbleTexture
+        }
+    }
+
+    func update(ripple: AquariumVisibleTapRipple, sceneHeight: CGFloat) {
+        position = CGPoint(x: ripple.position.x, y: sceneHeight - ripple.position.y)
+
+        let ringSize = 18 + ripple.progress * 92
+        let opacity = max(0, 1 - ripple.progress)
+        ringNode.size = CGSize(width: ringSize, height: ringSize)
+        ringNode.alpha = 0.76 * opacity
+
+        for (index, node) in bubbleNodes.enumerated() {
+            let bubbleSize = max(2.6, 6 - ripple.progress * 2.2 + CGFloat(index))
+            let bubbleX = CGFloat(index - 1) * (10 + ripple.progress * 8)
+            let bubbleYOffset = -14 - ripple.progress * (18 + CGFloat(index) * 8)
+            node.position = CGPoint(x: bubbleX, y: -bubbleYOffset)
+            node.size = CGSize(width: bubbleSize, height: bubbleSize)
+            node.alpha = 0.24 * opacity
+        }
+    }
+}
+
+private struct AquariumSpriteTextureSignature: Hashable {
+    let configuration: AquariumConfiguration
+    let scaleBucket: Int
+}
+
+private struct AquariumSpriteFishTextureKey: Hashable {
+    let species: FishSpecies
+    let scaleBucket: Int
+}
+
+private struct AquariumSpriteCompanionTextureKey: Hashable {
+    let configurationHash: Int
+    let companion: CompanionStyle
+    let scaleBucket: Int
+}
+
+private struct AquariumSpriteVisitorTextureKey: Hashable {
+    let kind: RareVisitorKind
+    let scaleBucket: Int
+}
+
+private struct AquariumSpriteThoughtTextureKey: Hashable {
+    let text: String
+    let pointsToTrailing: Bool
+    let scaleBucket: Int
+}
+#endif
+
+#if canImport(MetalKit) && canImport(UIKit)
+struct MetalAquariumSceneView: View {
+    let profile: BowlProfile
+    let configuration: AquariumConfiguration
+    let format: AquariumDisplayFormat
+    let feedBursts: [AquariumFeedBurst]
+    let tapRipples: [AquariumTapRipple]
+    let phaseOffset: Double
+
+    var body: some View {
+        GeometryReader { geometry in
+            AquariumMetalRepresentable(
+                profile: profile,
+                configuration: configuration,
+                format: format,
+                feedBursts: feedBursts,
+                tapRipples: tapRipples,
+                phaseOffset: phaseOffset
+            )
+            .padding(format.bodyInset)
+            .clipShape(AquariumBodyShape(style: configuration.vesselStyle))
+        }
+        .aspectRatio(format.aspectRatio, contentMode: .fit)
+    }
+}
+
+struct AquariumStaticBackdropView: View {
+    let configuration: AquariumConfiguration
+    let format: AquariumDisplayFormat
+    let phase: Double
+    let petSnapshot: AquariumPetSnapshot
+    var showsDecoration: Bool = true
+
+    var body: some View {
+        GeometryReader { _ in
+            ZStack {
+                AquariumMetalBackdropSnapshotView(
+                    configuration: configuration,
+                    format: format,
+                    phase: phase,
+                    petSnapshot: petSnapshot,
+                    showsDecoration: showsDecoration
+                )
+
+                AquariumMetalOverlaySnapshotView(configuration: configuration)
+            }
+            .padding(format.bodyInset)
+        }
+        .aspectRatio(format.aspectRatio, contentMode: .fit)
+    }
+}
+
+struct AquariumDecorationForegroundOverlayView: View {
+    let configuration: AquariumConfiguration
+    let format: AquariumDisplayFormat
+    let phase: Double
+
+    var body: some View {
+        GeometryReader { geometry in
+            let size = geometry.size
+            let waterLevel = configuration.vesselStyle == .orb ? 0.75 : 0.80
+
+            DecorationLayer(decoration: configuration.decoration)
+                .mask(
+                    WaterSurfaceShape(
+                        level: waterLevel,
+                        waveShift: 0.02 * sin(phase * 1.7)
+                    )
+                )
+                .padding(format.bodyInset)
+                .frame(width: size.width, height: size.height)
+        }
+        .allowsHitTesting(false)
+        .aspectRatio(format.aspectRatio, contentMode: .fit)
+    }
+}
+
+private struct AquariumMetalRepresentable: UIViewRepresentable {
+    let profile: BowlProfile
+    let configuration: AquariumConfiguration
+    let format: AquariumDisplayFormat
+    let feedBursts: [AquariumFeedBurst]
+    let tapRipples: [AquariumTapRipple]
+    let phaseOffset: Double
+
+    func makeCoordinator() -> AquariumMetalCoordinator {
+        AquariumMetalCoordinator(
+            profile: profile,
+            configuration: configuration,
+            format: format,
+            feedBursts: feedBursts,
+            tapRipples: tapRipples,
+            phaseOffset: phaseOffset
+        )
+    }
+
+    func makeUIView(context: Context) -> MTKView {
+        let view = MTKView(frame: .zero, device: context.coordinator.device)
+        view.delegate = context.coordinator
+        view.framebufferOnly = true
+        view.enableSetNeedsDisplay = true
+        view.isPaused = true
+        view.autoResizeDrawable = true
+        view.colorPixelFormat = .bgra8Unorm
+        view.clearColor = MTLClearColorMake(0, 0, 0, 0)
+        view.isOpaque = false
+        view.backgroundColor = .clear
+        view.layer.isOpaque = false
+        context.coordinator.attach(view: view)
+        return view
+    }
+
+    func updateUIView(_ uiView: MTKView, context: Context) {
+        context.coordinator.update(
+            profile: profile,
+            configuration: configuration,
+            format: format,
+            feedBursts: feedBursts,
+            tapRipples: tapRipples,
+            phaseOffset: phaseOffset,
+            view: uiView
+        )
+    }
+}
+
+@MainActor
+private final class AquariumMetalCoordinator: NSObject, MTKViewDelegate {
+    let device: MTLDevice
+
+    private let commandQueue: MTLCommandQueue
+    private let pipelineState: MTLRenderPipelineState
+    private let samplerState: MTLSamplerState
+    private let textureLoader: MTKTextureLoader
+
+    private var profile: BowlProfile
+    private var configuration: AquariumConfiguration
+    private var format: AquariumDisplayFormat
+    private var feedBursts: [AquariumFeedBurst]
+    private var tapRipples: [AquariumTapRipple]
+    private var phaseOffset: Double
+
+    private weak var view: MTKView?
+    nonisolated(unsafe) private var displayLink: CADisplayLink?
+    private var whiteMaskTexture: MTLTexture?
+    private var bubbleTexture: MTLTexture?
+    private var pelletTexture: MTLTexture?
+    private var rippleTexture: MTLTexture?
+    private var fishTextures: [FishSpecies: MTLTexture] = [:]
+    private var companionTextures: [CompanionStyle: MTLTexture] = [:]
+    private var visitorTextures: [RareVisitorKind: MTLTexture] = [:]
+    private var thoughtTextures: [String: MTLTexture] = [:]
+    private var lastStaticSignature: AquariumMetalStaticSignature?
+
+    init(
+        profile: BowlProfile,
+        configuration: AquariumConfiguration,
+        format: AquariumDisplayFormat,
+        feedBursts: [AquariumFeedBurst],
+        tapRipples: [AquariumTapRipple],
+        phaseOffset: Double
+    ) {
+        guard
+            let device = MTLCreateSystemDefaultDevice(),
+            let commandQueue = device.makeCommandQueue()
+        else {
+            fatalError("Metal is required for the live aquarium scene.")
+        }
+
+        self.device = device
+        self.commandQueue = commandQueue
+        self.textureLoader = MTKTextureLoader(device: device)
+        self.profile = profile
+        self.configuration = configuration
+        self.format = format
+        self.feedBursts = feedBursts
+        self.tapRipples = tapRipples
+        self.phaseOffset = phaseOffset
+
+        do {
+            let library = try device.makeLibrary(source: Self.shaderSource, options: nil)
+            let descriptor = MTLRenderPipelineDescriptor()
+            descriptor.vertexFunction = library.makeFunction(name: "aquariumVertex")
+            descriptor.fragmentFunction = library.makeFunction(name: "aquariumFragment")
+            descriptor.vertexDescriptor = Self.vertexDescriptor
+            descriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
+            descriptor.colorAttachments[0].isBlendingEnabled = true
+            descriptor.colorAttachments[0].rgbBlendOperation = .add
+            descriptor.colorAttachments[0].alphaBlendOperation = .add
+            descriptor.colorAttachments[0].sourceRGBBlendFactor = .sourceAlpha
+            descriptor.colorAttachments[0].sourceAlphaBlendFactor = .sourceAlpha
+            descriptor.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
+            descriptor.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
+            self.pipelineState = try device.makeRenderPipelineState(descriptor: descriptor)
+        } catch {
+            fatalError("Unable to create Metal pipeline: \(error)")
+        }
+
+        let samplerDescriptor = MTLSamplerDescriptor()
+        samplerDescriptor.minFilter = .linear
+        samplerDescriptor.magFilter = .linear
+        samplerDescriptor.mipFilter = .notMipmapped
+        samplerDescriptor.sAddressMode = .clampToEdge
+        samplerDescriptor.tAddressMode = .clampToEdge
+        self.samplerState = device.makeSamplerState(descriptor: samplerDescriptor)!
+
+        super.init()
+        startDisplayLinkIfNeeded()
+    }
+
+    func attach(view: MTKView) {
+        self.view = view
+        startDisplayLinkIfNeeded()
+    }
+
+    func update(
+        profile: BowlProfile,
+        configuration: AquariumConfiguration,
+        format: AquariumDisplayFormat,
+        feedBursts: [AquariumFeedBurst],
+        tapRipples: [AquariumTapRipple],
+        phaseOffset: Double,
+        view: MTKView
+    ) {
+        self.profile = profile
+        self.configuration = configuration
+        self.format = format
+        self.feedBursts = feedBursts
+        self.tapRipples = tapRipples
+        self.phaseOffset = phaseOffset
+        self.view = view
+        startDisplayLinkIfNeeded()
+        rebuildStaticTexturesIfNeeded(for: view, date: .now)
+    }
+
+    func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
+        rebuildStaticTexturesIfNeeded(for: view, date: .now)
+    }
+
+    func draw(in view: MTKView) {
+        guard
+            let descriptor = view.currentRenderPassDescriptor,
+            let drawable = view.currentDrawable
+        else {
+            return
+        }
+
+        let now = Date.now
+        rebuildStaticTexturesIfNeeded(for: view, date: now)
+        let phase = now.timeIntervalSinceReferenceDate / 4.1 + phaseOffset
+        let snapshot = profile.petSnapshot(at: now)
+        let resolver = AquariumMetalMotionResolver(
+            configuration: configuration,
+            format: format,
+            phase: phase,
+            petSnapshot: snapshot,
+            feedBursts: feedBursts,
+            tapRipples: tapRipples,
+            size: view.bounds.size
+        )
+
+        guard let commandBuffer = commandQueue.makeCommandBuffer(),
+              let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
+            return
+        }
+
+        var uniforms = AquariumMetalUniforms(
+            viewportSize: SIMD2(Float(max(view.bounds.width, 1)), Float(max(view.bounds.height, 1)))
+        )
+
+        encoder.setRenderPipelineState(pipelineState)
+        encoder.setFragmentSamplerState(samplerState, index: 0)
+        encoder.setVertexBytes(&uniforms, length: MemoryLayout<AquariumMetalUniforms>.stride, index: 1)
+
+        guard let whiteMaskTexture else {
+            encoder.endEncoding()
+            commandBuffer.present(drawable)
+            commandBuffer.commit()
+            return
+        }
+
+        if let bubbleTexture {
+            for bubble in resolver.bubbles() {
+                let size = CGSize(width: bubble.size, height: bubble.size)
+                drawQuad(
+                    encoder: encoder,
+                    texture: bubbleTexture,
+                    maskTexture: whiteMaskTexture,
+                    frame: CGRect(
+                        x: bubble.position.x - size.width * 0.5,
+                        y: bubble.position.y - size.height * 0.5,
+                        width: size.width,
+                        height: size.height
+                    ),
+                    tint: SIMD4(1, 1, 1, Float(bubble.opacity))
+                )
+            }
+        }
+
+        if let rippleTexture, let bubbleTexture {
+            for ripple in resolver.ripples() {
+                let ringSize = 18 + ripple.progress * 92
+                let opacity = max(0, 1 - ripple.progress)
+                drawQuad(
+                    encoder: encoder,
+                    texture: rippleTexture,
+                    maskTexture: whiteMaskTexture,
+                    frame: CGRect(
+                        x: ripple.position.x - ringSize * 0.5,
+                        y: ripple.position.y - ringSize * 0.5,
+                        width: ringSize,
+                        height: ringSize
+                    ),
+                    tint: SIMD4(1, 1, 1, Float(0.76 * opacity))
+                )
+
+                for index in 0..<3 {
+                    let bubbleSize = max(2.6, 6 - ripple.progress * 2.2 + CGFloat(index))
+                    let bubbleX = CGFloat(index - 1) * (10 + ripple.progress * 8)
+                    let bubbleY = -14 - ripple.progress * (18 + CGFloat(index) * 8)
+                    drawQuad(
+                            encoder: encoder,
+                            texture: bubbleTexture,
+                            maskTexture: whiteMaskTexture,
+                        frame: CGRect(
+                            x: ripple.position.x + bubbleX - bubbleSize * 0.5,
+                            y: ripple.position.y + bubbleY - bubbleSize * 0.5,
+                            width: bubbleSize,
+                            height: bubbleSize
+                        ),
+                        tint: SIMD4(1, 1, 1, Float(0.24 * opacity))
+                    )
+                }
+            }
+        }
+
+        if let pelletTexture {
+            for pellet in resolver.foodPellets() where pellet.scale > 0.001 {
+                let pelletSize = 9 * pellet.scale
+                drawQuad(
+                    encoder: encoder,
+                    texture: pelletTexture,
+                    maskTexture: whiteMaskTexture,
+                    frame: CGRect(
+                        x: view.bounds.width * pellet.xFraction - pelletSize * 0.5,
+                        y: view.bounds.height * pellet.yFraction - pelletSize * 0.5,
+                        width: pelletSize,
+                        height: pelletSize
+                    ),
+                    tint: SIMD4(1, 1, 1, Float(min(1, pellet.scale * 1.3)))
+                )
+            }
+        }
+
+        if let visitor = resolver.rareVisitor(),
+           let texture = visitorTextures[visitor.kind] {
+            let size = visitor.kind == .moonJelly
+            ? CGSize(width: 30 * visitor.scale, height: 36 * visitor.scale)
+            : CGSize(width: 28 * visitor.scale, height: 22 * visitor.scale)
+            drawQuad(
+                encoder: encoder,
+                texture: texture,
+                maskTexture: whiteMaskTexture,
+                frame: CGRect(
+                    x: visitor.position.x - size.width * 0.5,
+                    y: visitor.position.y - size.height * 0.5,
+                    width: size.width,
+                    height: size.height
+                )
+            )
+        }
+
+        if configuration.companion != .none,
+           let texture = companionTextures[configuration.companion] {
+            let layout = resolver.companionLayout()
+            let size = resolver.companionRenderSize()
+            drawQuad(
+                encoder: encoder,
+                texture: texture,
+                maskTexture: whiteMaskTexture,
+                frame: CGRect(
+                    x: layout.position.x - size.width * 0.5,
+                    y: layout.position.y - size.height * 0.5,
+                    width: size.width,
+                    height: size.height
+                ),
+                rotation: CGFloat(layout.rotation) * .pi / 180,
+                mirrored: layout.isMirrored
+            )
+        }
+
+        for layout in resolver.fishLayouts() {
+            guard let texture = fishTextures[layout.species] else { continue }
+            let frame = resolver.fishRenderRect(for: layout)
+            let alpha: Float = snapshot.isAlive ? 1 : 0.62
+            let tintStrength = Float(snapshot.colorStrength)
+            drawQuad(
+                encoder: encoder,
+                texture: texture,
+                maskTexture: whiteMaskTexture,
+                frame: frame,
+                rotation: CGFloat(layout.rotation) * .pi / 180,
+                mirrored: layout.isMirrored,
+                tint: SIMD4(tintStrength, tintStrength, tintStrength, alpha)
+            )
+        }
+
+        for thought in resolver.fishThoughtBubbles() {
+            if let texture = textureForThought(text: thought.text, pointsToTrailing: thought.pointsToTrailing, scale: view.contentScaleFactor) {
+                let size = CGSize(width: 42, height: 28)
+                drawQuad(
+                    encoder: encoder,
+                    texture: texture,
+                    maskTexture: whiteMaskTexture,
+                    frame: CGRect(
+                        x: thought.position.x - size.width * 0.5,
+                        y: thought.position.y - size.height * 0.5,
+                        width: size.width,
+                        height: size.height
+                    )
+                )
+            }
+        }
+
+        if let visitorThought = resolver.visitorThoughtBubble(),
+           let texture = textureForThought(text: visitorThought.text, pointsToTrailing: visitorThought.pointsToTrailing, scale: view.contentScaleFactor) {
+            let size = CGSize(width: 42, height: 28)
+            drawQuad(
+                encoder: encoder,
+                texture: texture,
+                maskTexture: whiteMaskTexture,
+                frame: CGRect(
+                    x: visitorThought.position.x - size.width * 0.5,
+                    y: visitorThought.position.y - size.height * 0.5,
+                    width: size.width,
+                    height: size.height
+                )
+            )
+        }
+
+        encoder.endEncoding()
+        commandBuffer.present(drawable)
+        commandBuffer.commit()
+    }
+
+    deinit {
+        displayLink?.invalidate()
+    }
+
+    @objc
+    private func stepDisplayLink() {
+        guard let view else { return }
+        guard view.window != nil else { return }
+        view.draw()
+    }
+
+    private func startDisplayLinkIfNeeded() {
+        guard displayLink == nil else { return }
+        let link = CADisplayLink(target: self, selector: #selector(stepDisplayLink))
+        if #available(iOS 15.0, *) {
+            link.preferredFrameRateRange = CAFrameRateRange(minimum: 20, maximum: 24, preferred: 24)
+        } else {
+            link.preferredFramesPerSecond = 24
+        }
+        link.add(to: .main, forMode: .common)
+        displayLink = link
+    }
+
+    private func rebuildStaticTexturesIfNeeded(for view: MTKView, date: Date) {
+        let pointSize = view.bounds.size
+        guard pointSize.width > 1, pointSize.height > 1 else { return }
+
+        let scale = max(2, view.contentScaleFactor)
+        let tone = AquariumSceneTone(at: date)
+        let snapshot = profile.petSnapshot(at: date)
+        let signature = AquariumMetalStaticSignature(
+            configuration: configuration,
+            format: format,
+            toneBucket: tone.hashToken,
+            isAlive: snapshot.isAlive,
+            colorBucket: Int(snapshot.colorStrength * 10),
+            widthBucket: Int(pointSize.width * scale),
+            heightBucket: Int(pointSize.height * scale)
+        )
+
+        guard signature != lastStaticSignature else { return }
+
+        guard let nextWhiteMaskTexture = makeTexture(size: CGSize(width: 2, height: 2), scale: 1, content: {
+            Color.white
+        }) else {
+            return
+        }
+
+        let nextBubbleTexture = makeTexture(size: CGSize(width: 26, height: 26), scale: scale) {
+            AquariumMetalBubbleSpriteView()
+        }
+
+        let nextPelletTexture = makeTexture(size: CGSize(width: 16, height: 16), scale: scale) {
+            AquariumMetalPelletSpriteView()
+        }
+
+        let nextRippleTexture = makeTexture(size: CGSize(width: 120, height: 120), scale: scale) {
+            AquariumMetalRippleSpriteView()
+        }
+
+        var nextFishTextures: [FishSpecies: MTLTexture] = [:]
+        for species in configuration.uniqueFishSpecies {
+            let canvas = AquariumMetalMotionResolver.textureCanvasSize(for: species)
+            if let texture = makeTexture(size: canvas, scale: scale, content: {
+                FishSprite(
+                    species: species,
+                    isMirrored: false,
+                    vitality: 1,
+                    isAlive: true
+                )
+                .frame(width: canvas.width, height: canvas.height)
+            }) {
+                nextFishTextures[species] = texture
+            }
+        }
+        guard nextFishTextures.count == configuration.uniqueFishSpecies.count else {
+            return
+        }
+
+        var nextCompanionTextures: [CompanionStyle: MTLTexture] = [:]
+        if configuration.companion != .none {
+            let canvas = AquariumMetalMotionResolver.textureCanvasSize(for: configuration.companion)
+            nextCompanionTextures[configuration.companion] = makeTexture(size: canvas, scale: scale) {
+                AquariumMetalCompanionSnapshotView(
+                    configuration: configuration,
+                    canvasSize: canvas
+                )
+            }
+            guard nextCompanionTextures[configuration.companion] != nil else {
+                return
+            }
+        }
+
+        var nextVisitorTextures: [RareVisitorKind: MTLTexture] = [:]
+        if let moonJellyTexture = makeTexture(size: CGSize(width: 36, height: 42), scale: scale, content: {
+            MoonJellyVisitor()
+                .frame(width: 36, height: 42)
+        }) {
+            nextVisitorTextures[.moonJelly] = moonJellyTexture
+        }
+        if let seaAngelTexture = makeTexture(size: CGSize(width: 34, height: 28), scale: scale, content: {
+            SeaAngelVisitor()
+                .frame(width: 34, height: 28)
+        }) {
+            nextVisitorTextures[.seaAngel] = seaAngelTexture
+        }
+
+        var nextThoughtTextures: [String: MTLTexture] = [:]
+        let thoughtTexts = ["🍽️", "😫", "🥺", "🍤", "💤", "✨", "⚡️", "🌙", "🫧", "💭", "☁️", "🪽"]
+        for text in thoughtTexts {
+            for pointsToTrailing in [false, true] {
+                let key = "\(text)|\(pointsToTrailing)"
+                nextThoughtTextures[key] = makeTexture(size: CGSize(width: 56, height: 34), scale: scale) {
+                    ThoughtBubble(text: text, pointsToTrailing: pointsToTrailing)
+                        .frame(width: 56, height: 34)
+                }
+            }
+        }
+
+        whiteMaskTexture = nextWhiteMaskTexture
+        bubbleTexture = nextBubbleTexture
+        pelletTexture = nextPelletTexture
+        rippleTexture = nextRippleTexture
+        fishTextures = nextFishTextures
+        companionTextures = nextCompanionTextures
+        visitorTextures = nextVisitorTextures
+        thoughtTextures = nextThoughtTextures
+        lastStaticSignature = signature
+    }
+
+    private func textureForThought(text: String, pointsToTrailing: Bool, scale: CGFloat) -> MTLTexture? {
+        let key = "\(text)|\(pointsToTrailing)"
+        return thoughtTextures[key]
+    }
+
+    private func makeTexture<V: View>(size: CGSize, scale: CGFloat, @ViewBuilder content: () -> V) -> MTLTexture? {
+        let snapshotContent = content()
+            .frame(width: size.width, height: size.height)
+
+        let renderer = ImageRenderer(content: snapshotContent)
+        renderer.scale = scale
+        renderer.proposedSize = ProposedViewSize(size)
+
+        guard let cgImage = renderer.cgImage else { return nil }
+
+        return try? textureLoader.newTexture(
+            cgImage: cgImage,
+            options: [
+                MTKTextureLoader.Option.SRGB: false,
+                MTKTextureLoader.Option.textureUsage: NSNumber(value: MTLTextureUsage.shaderRead.rawValue),
+            ]
+        )
+    }
+
+    private func drawQuad(
+        encoder: MTLRenderCommandEncoder,
+        texture: MTLTexture,
+        maskTexture: MTLTexture,
+        frame: CGRect,
+        rotation: CGFloat = 0,
+        mirrored: Bool = false,
+        tint: SIMD4<Float> = SIMD4(1, 1, 1, 1)
+    ) {
+        let center = CGPoint(x: frame.midX, y: frame.midY)
+        let halfWidth = frame.width * 0.5
+        let halfHeight = frame.height * 0.5
+        let localCorners = [
+            CGPoint(x: -halfWidth, y: -halfHeight),
+            CGPoint(x: halfWidth, y: -halfHeight),
+            CGPoint(x: -halfWidth, y: halfHeight),
+            CGPoint(x: halfWidth, y: -halfHeight),
+            CGPoint(x: halfWidth, y: halfHeight),
+            CGPoint(x: -halfWidth, y: halfHeight),
+        ]
+        let leftUV: Float = mirrored ? 1 : 0
+        let rightUV: Float = mirrored ? 0 : 1
+        let texCoords = [
+            SIMD2(leftUV, 0),
+            SIMD2(rightUV, 0),
+            SIMD2(leftUV, 1),
+            SIMD2(rightUV, 0),
+            SIMD2(rightUV, 1),
+            SIMD2(leftUV, 1),
+        ]
+
+        let cosTheta = cos(rotation)
+        let sinTheta = sin(rotation)
+
+        var vertices: [AquariumMetalVertex] = []
+        vertices.reserveCapacity(6)
+
+        for (index, point) in localCorners.enumerated() {
+            let rotated = CGPoint(
+                x: point.x * cosTheta - point.y * sinTheta,
+                y: point.x * sinTheta + point.y * cosTheta
+            )
+            let absolute = CGPoint(x: center.x + rotated.x, y: center.y + rotated.y)
+            vertices.append(
+                AquariumMetalVertex(
+                    position: SIMD2(Float(absolute.x), Float(absolute.y)),
+                    texCoord: texCoords[index],
+                    color: tint
+                )
+            )
+        }
+
+        encoder.setVertexBytes(
+            vertices,
+            length: MemoryLayout<AquariumMetalVertex>.stride * vertices.count,
+            index: 0
+        )
+        encoder.setFragmentTexture(texture, index: 0)
+        encoder.setFragmentTexture(maskTexture, index: 1)
+        encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: vertices.count)
+    }
+
+    private static let shaderSource = """
+    #include <metal_stdlib>
+    using namespace metal;
+
+    struct VertexIn {
+        float2 position [[attribute(0)]];
+        float2 texCoord [[attribute(1)]];
+        float4 color [[attribute(2)]];
+    };
+
+    struct Uniforms {
+        float2 viewportSize;
+    };
+
+    struct VertexOut {
+        float4 position [[position]];
+        float2 texCoord;
+        float4 color;
+        float2 screenUV;
+    };
+
+    vertex VertexOut aquariumVertex(VertexIn in [[stage_in]], constant Uniforms& uniforms [[buffer(1)]]) {
+        VertexOut out;
+        float2 normalized = float2(
+            (in.position.x / uniforms.viewportSize.x) * 2.0 - 1.0,
+            1.0 - (in.position.y / uniforms.viewportSize.y) * 2.0
+        );
+        out.position = float4(normalized, 0.0, 1.0);
+        out.texCoord = in.texCoord;
+        out.color = in.color;
+        out.screenUV = float2(
+            in.position.x / uniforms.viewportSize.x,
+            in.position.y / uniforms.viewportSize.y
+        );
+        return out;
+    }
+
+    fragment half4 aquariumFragment(
+        VertexOut in [[stage_in]],
+        texture2d<half> colorTexture [[texture(0)]],
+        texture2d<half> maskTexture [[texture(1)]],
+        sampler textureSampler [[sampler(0)]]
+    ) {
+        constexpr sampler maskSampler(coord::normalized, address::clamp_to_edge, filter::linear);
+        half4 colorSample = colorTexture.sample(textureSampler, in.texCoord) * half4(in.color);
+        half mask = maskTexture.sample(maskSampler, in.screenUV).a;
+        return half4(colorSample.rgb, colorSample.a * mask);
+    }
+    """
+
+    private static let vertexDescriptor: MTLVertexDescriptor = {
+        let descriptor = MTLVertexDescriptor()
+
+        descriptor.attributes[0].format = .float2
+        descriptor.attributes[0].offset = 0
+        descriptor.attributes[0].bufferIndex = 0
+
+        descriptor.attributes[1].format = .float2
+        descriptor.attributes[1].offset = MemoryLayout<SIMD2<Float>>.stride
+        descriptor.attributes[1].bufferIndex = 0
+
+        descriptor.attributes[2].format = .float4
+        descriptor.attributes[2].offset = MemoryLayout<SIMD2<Float>>.stride * 2
+        descriptor.attributes[2].bufferIndex = 0
+
+        descriptor.layouts[0].stride = MemoryLayout<AquariumMetalVertex>.stride
+        descriptor.layouts[0].stepFunction = .perVertex
+
+        return descriptor
+    }()
+}
+
+private struct AquariumMetalStaticSignature: Hashable {
+    let configuration: AquariumConfiguration
+    let format: AquariumDisplayFormat
+    let toneBucket: Int
+    let isAlive: Bool
+    let colorBucket: Int
+    let widthBucket: Int
+    let heightBucket: Int
+}
+
+private struct AquariumMetalVertex {
+    let position: SIMD2<Float>
+    let texCoord: SIMD2<Float>
+    let color: SIMD4<Float>
+}
+
+private struct AquariumMetalUniforms {
+    var viewportSize: SIMD2<Float>
+}
+
+private struct AquariumMetalMotionResolver {
+    let configuration: AquariumConfiguration
+    let format: AquariumDisplayFormat
+    let phase: Double
+    let petSnapshot: AquariumPetSnapshot
+    let feedBursts: [AquariumFeedBurst]
+    let tapRipples: [AquariumTapRipple]
+    let size: CGSize
+
+    private var waterLevel: CGFloat {
+        configuration.vesselStyle == .orb ? 0.75 : 0.80
+    }
+
+    private var tone: AquariumSceneTone {
+        AquariumSceneTone(at: petSnapshot.date)
+    }
+
+    func foodPellets() -> [AquariumFoodPellet] {
+        feedBursts.flatMap { burst in
+            let elapsed = petSnapshot.date.timeIntervalSince(burst.startedAt)
+            let dropDuration: TimeInterval = 1.15
+            let grazeDuration: TimeInterval = 1.8
+            let releaseDuration: TimeInterval = 1.6
+            let settleDuration: TimeInterval = 2.2
+            let totalDuration = dropDuration + grazeDuration + releaseDuration + settleDuration
+            guard elapsed >= 0, elapsed <= totalDuration else { return [AquariumFoodPellet]() }
+
+            let dropProgress = min(max(elapsed / dropDuration, 0), 1)
+            let easedDrop = CGFloat(1 - pow(1 - dropProgress, 2))
+            let grazeProgress = CGFloat(min(max((elapsed - dropDuration) / grazeDuration, 0), 1))
+            let releaseProgress = CGFloat(min(max((elapsed - dropDuration - grazeDuration) / releaseDuration, 0), 1))
+            let settleProgress = CGFloat(min(max((elapsed - dropDuration - grazeDuration - releaseDuration) / settleDuration, 0), 1))
+
+            return (0..<3).map { index in
+                let spread = CGFloat(index - 1) * 0.026
+                let x = min(max(burst.xFraction + spread, 0.18), 0.82)
+                let restingDepth = 0.50 + CGFloat(index) * 0.07
+                let restingY = min(0.76, 0.08 + restingDepth)
+                let y: CGFloat
+                let visibility: CGFloat
+                let attraction: CGFloat
+
+                if elapsed < dropDuration {
+                    y = min(0.76, 0.08 + easedDrop * restingDepth)
+                    visibility = 1.0
+                    attraction = 0.36 + dropProgress * 0.28
+                } else if elapsed < dropDuration + grazeDuration {
+                    let bobAmount = 0.010 - grazeProgress * 0.004
+                    y = restingY + CGFloat(sin(Double(grazeProgress) * .pi * 2 + Double(index) * 0.8)) * bobAmount
+                    visibility = 0.96 - grazeProgress * 0.34
+                    attraction = 0.84 - grazeProgress * 0.08
+                } else if elapsed < dropDuration + grazeDuration + releaseDuration {
+                    y = restingY + CGFloat(sin(Double(releaseProgress) * .pi * 2 + Double(index) * 0.7)) * 0.004
+                    visibility = max(0.0, (1.0 - releaseProgress) * (1.0 - releaseProgress) * 0.48)
+                    attraction = max(0.18, pow(1.0 - releaseProgress, 1.15) * 0.68)
+                } else {
+                    y = restingY + CGFloat(sin(Double(settleProgress) * .pi * 1.6 + Double(index) * 0.7)) * 0.003
+                    visibility = 0.0
+                    attraction = max(0.01, pow(1.0 - settleProgress, 1.8) * 0.18)
+                }
+
+                let baseScale: CGFloat = index == 1 ? 1.0 : 0.84
+
+                return AquariumFoodPellet(
+                    xFraction: x,
+                    yFraction: y,
+                    scale: baseScale * visibility,
+                    attraction: attraction
+                )
+            }
+        }
+    }
+
+    func ripples() -> [AquariumVisibleTapRipple] {
+        tapRipples.compactMap { ripple in
+            let elapsed = petSnapshot.date.timeIntervalSince(ripple.startedAt)
+            guard elapsed >= 0, elapsed <= 1.18 else { return nil }
+            return AquariumVisibleTapRipple(
+                position: CGPoint(
+                    x: size.width * ripple.normalizedLocation.x,
+                    y: size.height * ripple.normalizedLocation.y
+                ),
+                progress: CGFloat(min(max(elapsed / 1.18, 0), 1))
+            )
+        }
+    }
+
+    func bubbles() -> [AquariumDynamicBubble] {
+        let count = max(4, Int(round(7 * petSnapshot.bubbleIntensity * tone.bubbleStrength)))
+        let waterTop = size.height * (1 - waterLevel)
+        let waterHeight = size.height * waterLevel
+
+        return (0..<count).map { index in
+            let seed = Double(abs(configuration.hashValue &+ index * 47) % 1000) / 1000
+            let rise = CGFloat((phase * (0.09 + seed * 0.06) + Double(index) * 0.17).truncatingRemainder(dividingBy: 1))
+            let x = size.width * (0.18 + CGFloat(seed) * 0.64 + CGFloat(sin(phase * 0.24 + Double(index))) * 0.04)
+            let y = waterTop + (1 - rise) * waterHeight
+            let radius = 4.5 + CGFloat(index % 3) * 2.8 + CGFloat(seed) * 3
+            let opacity = 0.16 + CGFloat(1 - rise) * 0.28
+            return AquariumDynamicBubble(
+                position: CGPoint(x: min(max(x, size.width * 0.12), size.width * 0.88), y: y),
+                size: radius * 2,
+                opacity: opacity
+            )
+        }
+    }
+
+    func fishLayouts() -> [FishLayout] {
+        let speciesLineup = configuration.resolvedFishSpecies
+        let count = speciesLineup.count
+        let isCompactFormat = format == .widgetSmall
+        let isAppIconFormat = format == .appIcon
+        let personality = configuration.personality
+        let formatScale: CGFloat = isCompactFormat ? 0.82 : (isAppIconFormat ? 1.58 : 1.0)
+        let baseX: [CGFloat]
+        let baseY: [CGFloat]
+        let scales: [CGFloat]
+        let foodResponse = foodResponse()
+        let laneWidth = size.width * (isCompactFormat ? 0.068 : (isAppIconFormat ? 0.060 : 0.086)) * personality.horizontalRangeMultiplier
+        let verticalRange = size.height * (isCompactFormat ? 0.038 : (isAppIconFormat ? 0.034 : 0.048)) * personality.verticalRangeMultiplier
+
+        switch count {
+        case 1:
+            if isAppIconFormat {
+                baseX = [0.50]
+                baseY = [0.45]
+                scales = [0.46]
+            } else {
+                baseX = [0.48]
+                baseY = [0.42]
+                scales = [0.30]
+            }
+        case 2:
+            baseX = [0.27, 0.72]
+            baseY = [0.48, 0.38]
+            scales = [0.27, 0.23]
+        default:
+            baseX = [0.23, 0.52, 0.78]
+            baseY = [0.50, 0.37, 0.46]
+            scales = [0.25, 0.20, 0.19]
+        }
+
+        return (0..<count).map { index in
+            let species = speciesLineup[index]
+            let spriteScale = visualSpriteScale(for: species)
+            let motionScale = personality.motionScale * tone.motionScale
+            let cruisePhase = phase * motionScale * (0.46 + Double(index) * 0.05) + Double(index) * 1.7
+            let meanderPhase = phase * motionScale * (0.92 + Double(index) * 0.07) + Double(index) * 2.4
+            let bobPhase = phase * motionScale * (0.74 + Double(index) * 0.06) + Double(index) * 1.2
+            let tiltPhase = phase * motionScale * (1.16 + Double(index) * 0.04) + Double(index) * 0.9
+            let driftScale = petSnapshot.driftIntensity * personality.driftIntensityMultiplier
+            let sweep = CGFloat(sin(cruisePhase) * 0.74 + sin(meanderPhase) * 0.26)
+            let bob = CGFloat(sin(bobPhase) * 0.76 + cos(tiltPhase) * 0.24)
+            let idlePosition = CGPoint(
+                x: size.width * baseX[index] + sweep * laneWidth * driftScale,
+                y: size.height * baseY[index] + bob * verticalRange * driftScale
+            )
+            let width = size.width * scales[index] * formatScale * petSnapshot.bodyScaleX
+            let height = width * 0.72 * petSnapshot.bodyScaleY
+            let idleHeading = cos(cruisePhase) * 0.72 + cos(meanderPhase) * 0.28
+            let foodInterest = foodResponse.map {
+                min(0.96, interestStrength($0.strength, index: index, count: count) * personality.foodInterestMultiplier)
+            } ?? 0
+            let foodTarget = foodResponse.map {
+                foodTargetPosition(from: $0.anchor, index: index, count: count)
+            } ?? idlePosition
+            let approachStrength = smoothStep(from: 0.0, to: 0.80, value: foodInterest)
+            let foodOrbitPosition = CGPoint(
+                x: foodTarget.x + sweep * laneWidth * max(0.12, 0.42 - approachStrength * 0.26) * max(0.38, driftScale),
+                y: foodTarget.y + bob * verticalRange * max(0.10, 0.30 - approachStrength * 0.18) * max(0.38, driftScale)
+            )
+            let unclampedLivePosition = CGPoint(
+                x: idlePosition.x + (foodOrbitPosition.x - idlePosition.x) * approachStrength,
+                y: idlePosition.y + (foodOrbitPosition.y - idlePosition.y) * approachStrength
+            )
+            let livePosition = clampedFishPosition(
+                unclampedLivePosition,
+                species: species,
+                spriteScale: spriteScale
+            )
+            let targetHeading = max(-1, min(1, Double((foodOrbitPosition.x - idlePosition.x) / max(size.width * 0.18, 1))))
+            let heading = idleHeading * Double(1 - approachStrength) + targetHeading * Double(approachStrength)
+            let deadPosition = clampedFishPosition(
+                CGPoint(
+                    x: size.width * min(max(baseX[index], 0.28), 0.72),
+                    y: size.height * (0.77 + CGFloat(index) * 0.04)
+                ),
+                species: species,
+                spriteScale: spriteScale
+            )
+
+            return FishLayout(
+                species: species,
+                position: petSnapshot.isAlive ? livePosition : deadPosition,
+                size: CGSize(width: width, height: height),
+                spriteScale: isAppIconFormat ? 3.6 : spriteScale,
+                rotation: petSnapshot.isAlive
+                ? Double(-4 + index * 4) + heading * 10 + Double(bob) * 6 * Double(driftScale)
+                : Double(76 - index * 9),
+                isMirrored: petSnapshot.isAlive ? heading > 0 : index % 2 == 0
+            )
+        }
+    }
+
+    func fishRenderRect(for layout: FishLayout) -> CGRect {
+        let extents = fishSpriteExtents(for: layout.species, spriteScale: layout.spriteScale)
+        return CGRect(
+            x: layout.position.x - extents.halfWidth,
+            y: layout.position.y - extents.top,
+            width: extents.halfWidth * 2,
+            height: extents.top + extents.bottom
+        )
+    }
+
+    func companionLayout() -> CompanionLayout {
+        let metrics: (
+            baseX: CGFloat,
+            baseY: CGFloat,
+            range: CGFloat,
+            stepLift: CGFloat,
+            speed: Double,
+            offset: Double,
+            naturalFacingRight: Bool
+        )
+
+        switch configuration.companion {
+        case .none:
+            metrics = (0.50, 0.84, 0, 0, 0, 0, true)
+        case .snail:
+            metrics = (
+                configuration.vesselStyle == .panorama ? 0.80 : 0.68,
+                0.83,
+                configuration.vesselStyle == .panorama ? 0.050 : 0.026,
+                0.004,
+                0.48,
+                0.7,
+                true
+            )
+        case .shrimp:
+            metrics = (
+                configuration.vesselStyle == .panorama ? 0.68 : 0.61,
+                0.80,
+                configuration.vesselStyle == .panorama ? 0.052 : 0.044,
+                0.006,
+                0.72,
+                1.8,
+                false
+            )
+        case .crab:
+            metrics = (
+                configuration.vesselStyle == .panorama ? 0.54 : 0.50,
+                0.81,
+                configuration.vesselStyle == .panorama ? 0.046 : 0.038,
+                0.004,
+                0.60,
+                2.7,
+                false
+            )
+        case .seaCucumber:
+            metrics = (
+                configuration.vesselStyle == .panorama ? 0.34 : 0.38,
+                0.82,
+                configuration.vesselStyle == .panorama ? 0.036 : 0.030,
+                0.002,
+                0.34,
+                3.4,
+                false
+            )
+        case .nudibranchFlame, .nudibranchRibbon:
+            metrics = (
+                configuration.vesselStyle == .panorama ? 0.42 : 0.46,
+                0.82,
+                configuration.vesselStyle == .panorama ? 0.040 : 0.034,
+                0.003,
+                0.42,
+                4.2,
+                false
+            )
+        }
+
+        let motionPhase = phase * metrics.speed + metrics.offset
+        let horizontalDrift = CGFloat(sin(motionPhase))
+        let lift = abs(CGFloat(sin(motionPhase * 1.9))) * size.height * metrics.stepLift
+        let movingRight = cos(motionPhase) > 0
+        let isMirrored = metrics.naturalFacingRight ? !movingRight : movingRight
+        let rotationStrength: CGFloat
+
+        switch configuration.companion {
+        case .shrimp:
+            rotationStrength = 4.8
+        case .crab:
+            rotationStrength = 2.6
+        case .seaCucumber, .nudibranchFlame, .nudibranchRibbon:
+            rotationStrength = 1.4
+        default:
+            rotationStrength = 1.8
+        }
+
+        return CompanionLayout(
+            position: CGPoint(
+                x: size.width * metrics.baseX + horizontalDrift * size.width * metrics.range,
+                y: size.height * metrics.baseY - lift
+            ),
+            isMirrored: isMirrored,
+            rotation: Double(horizontalDrift * rotationStrength)
+        )
+    }
+
+    func companionRenderSize() -> CGSize {
+        switch configuration.companion {
+        case .none:
+            return .zero
+        case .snail:
+            return CGSize(width: size.width * 0.13, height: size.width * 0.10)
+        case .shrimp:
+            return CGSize(width: size.width * 0.15, height: size.width * 0.10)
+        case .crab:
+            return CGSize(width: size.width * 0.16, height: size.width * 0.11)
+        case .seaCucumber:
+            return CGSize(width: size.width * 0.22, height: size.width * 0.10)
+        case .nudibranchFlame:
+            return CGSize(width: size.width * 0.23, height: size.width * 0.11)
+        case .nudibranchRibbon:
+            return CGSize(width: size.width * 0.22, height: size.width * 0.11)
+        }
+    }
+
+    func rareVisitor() -> RareVisitorLayout? {
+        let bucket = Int(petSnapshot.date.timeIntervalSince1970 / 43200)
+        let seed = abs(configuration.hashValue ^ bucket)
+        guard seed % 7 == 0 else { return nil }
+
+        let kind: RareVisitorKind = seed.isMultiple(of: 2) ? .moonJelly : .seaAngel
+        let baseX = size.width * (0.20 + CGFloat(seed % 37) / 100)
+        let driftX = CGFloat(sin(phase * 0.42 + Double(seed % 11))) * size.width * 0.04
+        let baseY = kind == .moonJelly ? size.height * 0.30 : size.height * 0.38
+
+        return RareVisitorLayout(
+            kind: kind,
+            position: CGPoint(x: min(max(baseX + driftX, size.width * 0.16), size.width * 0.84), y: baseY),
+            scale: kind == .moonJelly ? 1.0 : 0.92
+        )
+    }
+
+    func visitorThoughtBubble() -> ThoughtLayout? {
+        guard format != .widgetSmall, let visitor = rareVisitor() else { return nil }
+
+        return ThoughtLayout(
+            text: visitor.kind == .moonJelly ? "✨" : "🪽",
+            position: CGPoint(x: visitor.position.x, y: visitor.position.y - 16),
+            pointsToTrailing: visitor.kind == .seaAngel
+        )
+    }
+
+    func fishThoughtBubbles() -> [ThoughtLayout] {
+        let layouts = fishLayouts()
+        guard format != .widgetSmall, !layouts.isEmpty else { return [] }
+
+        let hourBucket = Int(petSnapshot.date.timeIntervalSince1970 / 3600)
+        let seed = abs(configuration.hashValue ^ hourBucket)
+        let shouldShow = petSnapshot.mood == .critical || seed.isMultiple(of: 2)
+        guard shouldShow else { return [] }
+
+        let index = seed % layouts.count
+        let layout = layouts[index]
+        let extents = fishSpriteExtents(for: layout.species, spriteScale: layout.spriteScale)
+        let horizontalOffset = layout.isMirrored ? extents.halfWidth * 0.18 : -extents.halfWidth * 0.18
+        return [
+            ThoughtLayout(
+                text: configuration.personality.thoughtText(mood: petSnapshot.mood, tone: tone),
+                position: CGPoint(
+                    x: layout.position.x + horizontalOffset,
+                    y: layout.position.y - extents.top - 14
+                ),
+                pointsToTrailing: layout.isMirrored
+            )
+        ]
+    }
+
+    private func visualSpriteScale(for species: FishSpecies) -> CGFloat {
+        let baseScale: CGFloat
+
+        switch format {
+        case .widgetSmall:
+            baseScale = 0.84
+        case .widgetMedium:
+            baseScale = 0.88
+        case .widgetLarge:
+            baseScale = 0.94
+        case .appIcon:
+            baseScale = 3.6
+        default:
+            baseScale = 1.0
+        }
+
+        if format == .widgetSmall || format == .widgetMedium {
+            switch species {
+            case .royalBetta, .opalAngelfish, .leopardShark:
+                return baseScale * 0.94
+            default:
+                return baseScale
+            }
+        }
+
+        return baseScale
+    }
+
+    private func clampedFishPosition(_ position: CGPoint, species: FishSpecies, spriteScale: CGFloat) -> CGPoint {
+        let extents = fishSpriteExtents(for: species, spriteScale: spriteScale)
+        let waterTop = size.height * (1 - waterLevel)
+        let topPadding: CGFloat = format == .widgetSmall ? 8 : (format == .widgetMedium ? 7 : 6)
+        let bottomPadding: CGFloat = format == .widgetSmall ? 7 : 6
+        let yRange = max(size.height * waterLevel - extents.top - extents.bottom, 1)
+        let normalizedY = min(max((position.y - waterTop) / yRange, 0), 1)
+        let orbCurveBoost = configuration.vesselStyle == .orb
+        ? abs(normalizedY - 0.52) * size.width * (format == .widgetSmall ? 0.18 : 0.12)
+        : 0
+        let sidePadding: CGFloat
+
+        switch format {
+        case .widgetSmall:
+            sidePadding = 14
+        case .widgetMedium:
+            sidePadding = 12
+        case .widgetLarge:
+            sidePadding = 9
+        case .appIcon:
+            sidePadding = 8
+        default:
+            sidePadding = 6
+        }
+
+        let xMargin = extents.halfWidth + sidePadding + orbCurveBoost
+        let minY = waterTop + extents.top + topPadding
+        let maxY = size.height - extents.bottom - bottomPadding
+
+        return CGPoint(
+            x: min(max(position.x, xMargin), size.width - xMargin),
+            y: min(max(position.y, minY), maxY)
+        )
+    }
+
+    private func fishSpriteExtents(for species: FishSpecies, spriteScale: CGFloat) -> (halfWidth: CGFloat, top: CGFloat, bottom: CGFloat) {
+        let bodyWidth = species.bodyWidth * spriteScale
+        let bodyHeight = species.bodyHeight * spriteScale
+        let tailWidth = species.bodyWidth * 0.92 * species.tailScale * spriteScale
+        let upperFinHeight = species.bodyHeight * 1.1 * species.finHeightMultiplier * spriteScale
+        let lowerFinHeight = species.bodyHeight * 0.92 * species.finHeightMultiplier * spriteScale
+
+        var halfWidth = max(bodyWidth * 0.54, bodyWidth * 0.42 + tailWidth * 0.5) + 4 * spriteScale
+        var topExtent = max(bodyHeight * 0.5, bodyHeight * 0.48 + upperFinHeight * 0.5) + 4 * spriteScale
+        var bottomExtent = max(bodyHeight * 0.5, bodyHeight * 0.48 + lowerFinHeight * 0.5) + 4 * spriteScale
+
+        if species == .leopardShark {
+            topExtent = max(topExtent, species.bodyHeight * 1.08 * spriteScale + 4 * spriteScale)
+        }
+
+        if species == .opalAngelfish {
+            bottomExtent = max(bottomExtent, species.bodyHeight * 1.58 * spriteScale + 4 * spriteScale)
+        }
+
+        if species == .royalBetta {
+            halfWidth += 2 * spriteScale
+        }
+
+        return (halfWidth, topExtent, bottomExtent)
+    }
+
+    private func foodResponse() -> FoodResponse? {
+        let pellets = foodPellets()
+        guard !pellets.isEmpty else { return nil }
+
+        let xFraction = pellets.map(\.xFraction).reduce(0, +) / CGFloat(pellets.count)
+        let yFraction = pellets.map(\.yFraction).reduce(0, +) / CGFloat(pellets.count)
+        let attraction = pellets.map(\.attraction).reduce(0, +) / CGFloat(pellets.count)
+        let depthProgress = smoothStep(from: 0.18, to: 0.74, value: yFraction)
+        let freshness = smoothStep(from: 0.02, to: 0.82, value: attraction)
+        let strength = min(0.90, depthProgress * freshness)
+
+        guard strength > 0.008 else { return nil }
+
+        return FoodResponse(
+            anchor: CGPoint(
+                x: size.width * xFraction,
+                y: size.height * yFraction
+            ),
+            strength: strength
+        )
+    }
+
+    private func foodTargetPosition(from anchor: CGPoint, index: Int, count: Int) -> CGPoint {
+        let centerOffset = CGFloat(index) - CGFloat(count - 1) * 0.5
+        let spread = size.width * (format == .widgetSmall ? 0.034 : (format == .appIcon ? 0.040 : 0.046))
+        let x = min(max(anchor.x + centerOffset * spread, size.width * 0.18), size.width * 0.82)
+        let y = min(
+            max(anchor.y - size.height * (0.035 + CGFloat(index % 2) * 0.018), size.height * 0.24),
+            size.height * 0.72
+        )
+        return CGPoint(x: x, y: y)
+    }
+
+    private func interestStrength(_ base: CGFloat, index: Int, count: Int) -> CGFloat {
+        let centerOffset = abs(CGFloat(index) - CGFloat(count - 1) * 0.5)
+        let taper = max(0.82, 1 - centerOffset * 0.10)
+        return min(0.86, base * taper)
+    }
+
+    private func smoothStep(from lower: CGFloat, to upper: CGFloat, value: CGFloat) -> CGFloat {
+        guard upper > lower else { return 0 }
+        let t = min(max((value - lower) / (upper - lower), 0), 1)
+        return t * t * (3 - 2 * t)
+    }
+
+    static func textureCanvasSize(for species: FishSpecies) -> CGSize {
+        let resolver = AquariumMetalMotionResolver(
+            configuration: .hero,
+            format: .widgetLarge,
+            phase: 0,
+            petSnapshot: .decorative(at: .now),
+            feedBursts: [],
+            tapRipples: [],
+            size: CGSize(width: 200, height: 200)
+        )
+        let extents = resolver.fishSpriteExtents(for: species, spriteScale: 1)
+        return CGSize(width: extents.halfWidth * 2 + 12, height: extents.top + extents.bottom + 12)
+    }
+
+    static func textureCanvasSize(for companion: CompanionStyle) -> CGSize {
+        switch companion {
+        case .none:
+            return .zero
+        case .snail:
+            return CGSize(width: 40, height: 30)
+        case .shrimp:
+            return CGSize(width: 48, height: 28)
+        case .crab:
+            return CGSize(width: 54, height: 34)
+        case .seaCucumber:
+            return CGSize(width: 62, height: 28)
+        case .nudibranchFlame:
+            return CGSize(width: 68, height: 32)
+        case .nudibranchRibbon:
+            return CGSize(width: 64, height: 32)
+        }
+    }
+}
+
+private struct AquariumDynamicBubble {
+    let position: CGPoint
+    let size: CGFloat
+    let opacity: CGFloat
+}
+
+private struct AquariumVisibleTapRipple {
+    let position: CGPoint
+    let progress: CGFloat
+}
+
+private struct AquariumMetalBackdropSnapshotView: View {
+    let configuration: AquariumConfiguration
+    let format: AquariumDisplayFormat
+    let phase: Double
+    let petSnapshot: AquariumPetSnapshot
+    var showsDecoration: Bool = true
+
+    private var bodyShape: AquariumBodyShape {
+        AquariumBodyShape(style: configuration.vesselStyle)
+    }
+
+    var body: some View {
+        bodyShape
+            .fill(Color.white.opacity(0.08))
+            .overlay {
+                AquariumMetalStaticInteriorView(
+                    configuration: configuration,
+                    format: format,
+                    phase: phase,
+                    petSnapshot: petSnapshot,
+                    showsDecoration: showsDecoration
+                )
+            }
+            .clipShape(bodyShape)
+            .shadow(color: Color.white.opacity(0.35), radius: 8)
+            .shadow(color: Color.black.opacity(0.16), radius: 22, y: 18)
+    }
+}
+
+private struct AquariumMetalOverlaySnapshotView: View {
+    let configuration: AquariumConfiguration
+
+    private var bodyShape: AquariumBodyShape {
+        AquariumBodyShape(style: configuration.vesselStyle)
+    }
+
+    var body: some View {
+        ZStack {
+            AquariumRefractionOverlay(
+                configuration: configuration,
+                style: configuration.vesselStyle
+            )
+
+            bodyShape
+                .stroke(Color.white.opacity(0.82), lineWidth: 1.2)
+
+            bodyShape
+                .inset(by: 1.6)
+                .stroke(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.95),
+                            Color.white.opacity(0.15),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 0.8
+                )
+        }
+    }
+}
+
+private struct AquariumMetalMaskSnapshotView: View {
+    let style: AquariumVesselStyle
+
+    var body: some View {
+        AquariumBodyShape(style: style)
+            .fill(Color.white)
+    }
+}
+
+private struct AquariumMetalStaticInteriorView: View {
+    let configuration: AquariumConfiguration
+    let format: AquariumDisplayFormat
+    let phase: Double
+    let petSnapshot: AquariumPetSnapshot
+    var showsDecoration: Bool = true
+
+    private var sceneAccentColors: [Color] {
+        configuration.substrate.accentColors + configuration.decoration.accentColors + configuration.fishPalette
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            let size = geometry.size
+            let waterLevel = configuration.vesselStyle == .orb ? 0.75 : 0.80
+            let sceneTone = AquariumSceneTone(at: petSnapshot.date)
+
+            ZStack {
+                LinearGradient(
+                    colors: sceneTone.backgroundColors,
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+
+                if sceneTone == .night {
+                    NightGlints(phase: phase)
+                        .opacity(0.30)
+                }
+
+                IridescentMist(colors: sceneAccentColors + sceneTone.accentColors)
+                    .opacity((petSnapshot.isAlive ? 0.72 + petSnapshot.colorStrength * 0.28 : 0.46) * sceneTone.mistStrength)
+
+                AquariumCausticPrismField(
+                    colors: sceneAccentColors + sceneTone.accentColors,
+                    phase: phase
+                )
+                .opacity(sceneTone == .night ? 0.18 : 0.28)
+                .blendMode(.screen)
+                .mask(
+                    WaterSurfaceShape(
+                        level: waterLevel,
+                        waveShift: 0.02 * sin(phase * 1.7)
+                    )
+                )
+
+                WaterSurfaceShape(
+                    level: waterLevel,
+                    waveShift: 0.02 * sin(phase * 1.7)
+                )
+                .fill(
+                    LinearGradient(
+                        colors: sceneTone.waterColors,
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+
+                WaterSurfaceShape(
+                    level: waterLevel,
+                    waveShift: 0.02 * sin(phase * 1.7)
+                )
+                .stroke(Color.white.opacity(0.34), lineWidth: 1)
+                .blur(radius: 0.6)
+
+                AquariumWaterlineSheen(level: waterLevel)
+                    .opacity(sceneTone == .night ? 0.22 : 0.34)
+
+                ZStack {
+                    if configuration.featurePiece == .kelp {
+                        featurePieceView(in: size)
+                    }
+
+                    SubstrateLayer(
+                        substrate: configuration.substrate,
+                        phase: phase
+                    )
+
+                    if configuration.featurePiece != .none, configuration.featurePiece != .kelp {
+                        featurePieceView(in: size)
+                    }
+
+                    if showsDecoration {
+                        DecorationLayer(decoration: configuration.decoration)
+                    }
+                }
+                .mask(
+                    WaterSurfaceShape(
+                        level: waterLevel,
+                        waveShift: 0.02 * sin(phase * 1.7)
+                    )
+                )
+
+                if !petSnapshot.isAlive {
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.05),
+                            Color.black.opacity(0.10),
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func featurePieceView(in size: CGSize) -> some View {
+        let colors = configuration.featurePiece.accentColors
+        let highlight = configuration.decoration.accentColors.first ?? configuration.substrate.accentColors.first ?? .white
+
+        switch configuration.featurePiece {
+        case .none:
+            EmptyView()
+        case .bubbleStone:
+            BubbleStoneFeature(primary: colors[0], highlight: colors[2])
+                .frame(width: size.width * 0.18, height: size.width * 0.20)
+                .position(featurePiecePosition(in: size))
+        case .driftwoodArch:
+            DriftwoodArchFeature(primary: colors[0], secondary: colors[1], highlight: colors[2])
+                .frame(width: size.width * 0.30, height: size.width * 0.19)
+                .position(featurePiecePosition(in: size))
+        case .moonLantern:
+            MoonLanternFeature(glow: colors[1], stand: highlight)
+                .frame(width: size.width * 0.18, height: size.width * 0.24)
+                .position(featurePiecePosition(in: size))
+        case .kelp:
+            KelpFeature(
+                primary: colors[0],
+                secondary: colors[1],
+                highlight: colors[2],
+                phase: phase
+            )
+            .frame(
+                width: size.width * (configuration.vesselStyle == .panorama ? 0.24 : 0.22),
+                height: size.height * (configuration.vesselStyle == .panorama ? 0.64 : 0.61)
+            )
+            .position(featurePiecePosition(in: size))
+        }
+    }
+
+    private func featurePiecePosition(in size: CGSize) -> CGPoint {
+        switch configuration.featurePiece {
+        case .none:
+            return CGPoint(x: size.width * 0.50, y: size.height * 0.80)
+        case .bubbleStone:
+            return CGPoint(
+                x: size.width * (configuration.vesselStyle == .panorama ? 0.70 : 0.68),
+                y: size.height * 0.79
+            )
+        case .driftwoodArch:
+            return CGPoint(
+                x: size.width * (configuration.vesselStyle == .panorama ? 0.45 : 0.44),
+                y: size.height * 0.79
+            )
+        case .moonLantern:
+            return CGPoint(
+                x: size.width * (configuration.vesselStyle == .panorama ? 0.66 : 0.70),
+                y: size.height * 0.78
+            )
+        case .kelp:
+            return CGPoint(
+                x: size.width * (configuration.vesselStyle == .panorama ? 0.29 : 0.32),
+                y: size.height * 0.64
+            )
+        }
+    }
+}
+
+private struct AquariumMetalCompanionSnapshotView: View {
+    let configuration: AquariumConfiguration
+    let canvasSize: CGSize
+
+    var body: some View {
+        let accent = configuration.decoration.accentColors.first ?? configuration.substrate.accentColors.first ?? .orange
+        let secondary = configuration.fishPalette.last ?? .white
+
+        Group {
+            switch configuration.companion {
+            case .none:
+                EmptyView()
+            case .snail:
+                SnailSprite(accent: accent)
+                    .frame(width: canvasSize.width, height: canvasSize.height)
+            case .shrimp:
+                ShrimpSprite(shell: accent, highlight: secondary)
+                    .frame(width: canvasSize.width, height: canvasSize.height)
+            case .crab:
+                CrabSprite(shell: accent, highlight: secondary)
+                    .frame(width: canvasSize.width, height: canvasSize.height)
+            case .seaCucumber:
+                SeaCucumberSprite(bodyColor: accent, underside: secondary, highlight: configuration.substrate.accentColors[1])
+                    .frame(width: canvasSize.width, height: canvasSize.height)
+            case .nudibranchFlame:
+                NudibranchSprite(variant: .flame)
+                    .frame(width: canvasSize.width, height: canvasSize.height)
+            case .nudibranchRibbon:
+                NudibranchSprite(variant: .ribbon)
+                    .frame(width: canvasSize.width, height: canvasSize.height)
+            }
+        }
+    }
+}
+
+private struct AquariumMetalBubbleSpriteView: View {
+    var body: some View {
+        Circle()
+            .fill(
+                RadialGradient(
+                    colors: [
+                        Color.white.opacity(0.72),
+                        Color.white.opacity(0.16),
+                        Color.clear,
+                    ],
+                    center: .topLeading,
+                    startRadius: 1,
+                    endRadius: 16
+                )
+            )
+            .overlay {
+                Circle()
+                    .stroke(Color.white.opacity(0.46), lineWidth: 1)
+            }
+    }
+}
+
+private struct AquariumMetalPelletSpriteView: View {
+    var body: some View {
+        Circle()
+            .fill(
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.96, green: 0.84, blue: 0.54),
+                        Color(red: 0.82, green: 0.61, blue: 0.26),
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+            .overlay {
+                Circle()
+                    .stroke(Color.white.opacity(0.28), lineWidth: 0.8)
+            }
+    }
+}
+
+private struct AquariumMetalRippleSpriteView: View {
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(Color.white.opacity(0.54), lineWidth: 2.2)
+
+            Circle()
+                .stroke(Color.white.opacity(0.22), lineWidth: 1.2)
+                .padding(18)
+        }
+    }
+}
+#endif
