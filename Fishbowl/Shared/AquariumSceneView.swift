@@ -81,18 +81,20 @@ private struct AquariumGlassVessel: View {
     }
 
     var body: some View {
-        baseBody
-            .clipShape(bodyShape)
-            .overlay {
-                AquariumRefractionOverlay(
-                    configuration: configuration,
-                    style: configuration.vesselStyle
-                )
-            }
-            .overlay { outerStroke }
-            .overlay { innerStroke }
-            .shadow(color: Color.white.opacity(0.35), radius: 8)
-            .shadow(color: Color.black.opacity(0.16), radius: 22, y: 18)
+        ZStack {
+            AquariumBodyAura(style: configuration.vesselStyle)
+
+            baseBody
+                .clipShape(bodyShape)
+                .overlay {
+                    AquariumRefractionOverlay(
+                        configuration: configuration,
+                        style: configuration.vesselStyle
+                    )
+                }
+                .overlay { outerStroke }
+                .overlay { innerStroke }
+        }
     }
 
     private var baseBody: some View {
@@ -1065,28 +1067,38 @@ private struct FoodResponse {
 }
 
 private struct AquariumRefractionOverlay: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     let configuration: AquariumConfiguration
     let style: AquariumVesselStyle
+
+    private var bodyShape: AquariumBodyShape {
+        AquariumBodyShape(style: style)
+    }
 
     var body: some View {
         GeometryReader { geometry in
             let size = geometry.size
 
             ZStack {
-                Circle()
+                bodyShape
                     .fill(
                         AngularGradient(
                             colors: configuration.decoration.accentColors + configuration.fishPalette + [Color.clear],
                             center: .center
                         )
                     )
-                    .frame(width: size.width * 1.02, height: size.width * 1.02)
+                    .scaleEffect(style == .orb ? 1.04 : 1.02)
                     .blur(radius: size.width * 0.05)
                     .offset(y: size.height * 0.16)
-                    .opacity(style == .orb ? 0.40 : 0.30)
+                    .opacity(style == .orb ? 0.34 : 0.28)
                     .blendMode(.screen)
+                    .mask(
+                        bodyShape
+                            .scaleEffect(style == .orb ? 1.08 : 1.04)
+                    )
 
-                RoundedRectangle(cornerRadius: size.height * 0.2, style: .continuous)
+                bodyShape
                     .stroke(
                         LinearGradient(
                             colors: [
@@ -1097,21 +1109,24 @@ private struct AquariumRefractionOverlay: View {
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
-                        lineWidth: 5
+                        lineWidth: style == .orb ? 4 : 5
                     )
-                    .blur(radius: 14)
+                    .blur(radius: style == .orb ? 12 : 14)
                     .mask(
-                        LinearGradient(
-                            colors: [
-                                Color.clear,
-                                Color.white,
-                                Color.white,
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
+                        bodyShape
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color.clear,
+                                        Color.white,
+                                        Color.white,
+                                    ],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
                     )
-                    .opacity(0.65)
+                    .opacity(colorScheme == .dark ? 0.65 : 0.40)
             }
         }
     }
@@ -2749,6 +2764,54 @@ private struct AquariumBodyShape: InsettableShape {
     }
 }
 
+private struct AquariumBodyAura: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    let style: AquariumVesselStyle
+
+    private var bodyShape: AquariumBodyShape {
+        AquariumBodyShape(style: style)
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            let size = geometry.size
+            let baseShadowOpacity = colorScheme == .dark ? 0.34 : 0.045
+            let colorBloomOpacity = colorScheme == .dark ? 0.0 : 0.02
+            let lift = style == .orb
+            ? (colorScheme == .dark ? 0.42 : 0.52)
+            : (colorScheme == .dark ? 0.34 : 0.44)
+            let verticalScale = style == .orb
+            ? (colorScheme == .dark ? 0.30 : 0.20)
+            : (colorScheme == .dark ? 0.24 : 0.16)
+
+            ZStack {
+                if colorScheme == .dark {
+                    bodyShape
+                        .fill(Color.white.opacity(0.16))
+                        .blur(radius: size.width * 0.020)
+                        .scaleEffect(1.02)
+                }
+
+                bodyShape
+                    .fill(Color.black.opacity(baseShadowOpacity))
+                    .blur(radius: size.width * (colorScheme == .dark ? 0.10 : 0.085))
+                    .scaleEffect(x: 0.92, y: verticalScale, anchor: .bottom)
+                    .offset(y: size.height * lift)
+
+                if colorBloomOpacity > 0 {
+                    bodyShape
+                        .fill(Color(red: 0.62, green: 0.70, blue: 0.86).opacity(colorBloomOpacity))
+                        .blur(radius: size.width * 0.14)
+                        .scaleEffect(x: 0.96, y: 0.34, anchor: .bottom)
+                        .offset(y: size.height * (lift - 0.02))
+                }
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
 #if canImport(SpriteKit) && canImport(UIKit)
 struct SpriteKitAquariumSceneView: View {
     let profile: BowlProfile
@@ -2852,6 +2915,7 @@ private final class AquariumSpriteCoordinator {
         if view.scene !== scene {
             view.presentScene(scene)
         }
+        scene.prepareInitialFrameIfNeeded(referenceDate: .now)
     }
 
     func update(
@@ -2879,6 +2943,7 @@ private final class AquariumSpriteCoordinator {
         if view.scene !== scene {
             view.presentScene(scene)
         }
+        scene.prepareInitialFrameIfNeeded(referenceDate: .now)
     }
 }
 
@@ -2918,6 +2983,10 @@ private final class AquariumSpriteScene: SKScene {
     private var animationElapsed: TimeInterval = 0
     private var lastUpdateTimestamp: TimeInterval?
     private var renderPaused = false
+    private let animationEpoch = Date()
+    private var hasRenderedInitialFrame = false
+    private var feedBurstStartTimes: [UUID: TimeInterval] = [:]
+    private var tapRippleStartTimes: [UUID: TimeInterval] = [:]
 
     init(
         profile: BowlProfile,
@@ -2957,6 +3026,7 @@ private final class AquariumSpriteScene: SKScene {
         self.feedBursts = feedBursts
         self.tapRipples = tapRipples
         self.phaseOffset = phaseOffset
+        syncAnimationAnchors()
         rebuildTexturesIfNeeded(scale: effectiveScale)
     }
 
@@ -2971,11 +3041,14 @@ private final class AquariumSpriteScene: SKScene {
     override func didMove(to view: SKView) {
         backgroundColor = .clear
         scaleMode = .resizeFill
+        prepareInitialFrameIfNeeded(referenceDate: .now)
     }
 
     override func didChangeSize(_ oldSize: CGSize) {
         super.didChangeSize(oldSize)
         rebuildTexturesIfNeeded(scale: effectiveScale)
+        hasRenderedInitialFrame = false
+        prepareInitialFrameIfNeeded(referenceDate: .now)
     }
 
     override func update(_ currentTime: TimeInterval) {
@@ -2989,16 +3062,23 @@ private final class AquariumSpriteScene: SKScene {
         }
         lastUpdateTimestamp = currentTime
 
-        let now = Date.now
+        renderCurrentFrame(referenceDate: .now)
+    }
+
+    func renderCurrentFrame(referenceDate: Date) {
+        guard size.width > 1, size.height > 1 else { return }
+
         let phase = animationElapsed / 4.1 + phaseOffset
-        let snapshot = profile.petSnapshot(at: now)
+        let snapshot = profile.petSnapshot(at: referenceDate)
+        let animationDate = animationEpoch.addingTimeInterval(animationElapsed)
         let resolver = AquariumMetalMotionResolver(
             configuration: configuration,
             format: format,
             phase: phase,
             petSnapshot: snapshot,
-            feedBursts: feedBursts,
-            tapRipples: tapRipples,
+            feedBursts: sceneTimedFeedBursts(),
+            tapRipples: sceneTimedTapRipples(),
+            animationDate: animationDate,
             size: size
         )
 
@@ -3010,6 +3090,12 @@ private final class AquariumSpriteScene: SKScene {
         syncFish(with: resolver.fishLayouts(), using: resolver, snapshot: snapshot)
         syncFishThoughts(with: resolver.fishThoughtBubbles())
         syncVisitorThought(with: resolver.visitorThoughtBubble())
+        hasRenderedInitialFrame = true
+    }
+
+    func prepareInitialFrameIfNeeded(referenceDate: Date) {
+        guard !hasRenderedInitialFrame else { return }
+        renderCurrentFrame(referenceDate: referenceDate)
     }
 
     private func rebuildTexturesIfNeeded(scale: CGFloat) {
@@ -3180,6 +3266,40 @@ private final class AquariumSpriteScene: SKScene {
 
     private var effectiveScale: CGFloat {
         view?.window?.screen.scale ?? view?.contentScaleFactor ?? 3
+    }
+
+    private func syncAnimationAnchors() {
+        let activeFeedIDs = Set(feedBursts.map(\.id))
+        feedBurstStartTimes = feedBurstStartTimes.filter { activeFeedIDs.contains($0.key) }
+        for burst in feedBursts where feedBurstStartTimes[burst.id] == nil {
+            feedBurstStartTimes[burst.id] = animationElapsed
+        }
+
+        let activeRippleIDs = Set(tapRipples.map(\.id))
+        tapRippleStartTimes = tapRippleStartTimes.filter { activeRippleIDs.contains($0.key) }
+        for ripple in tapRipples where tapRippleStartTimes[ripple.id] == nil {
+            tapRippleStartTimes[ripple.id] = animationElapsed
+        }
+    }
+
+    private func sceneTimedFeedBursts() -> [AquariumFeedBurst] {
+        feedBursts.map { burst in
+            AquariumFeedBurst(
+                id: burst.id,
+                startedAt: animationEpoch.addingTimeInterval(feedBurstStartTimes[burst.id] ?? animationElapsed),
+                xFraction: burst.xFraction
+            )
+        }
+    }
+
+    private func sceneTimedTapRipples() -> [AquariumTapRipple] {
+        tapRipples.map { ripple in
+            AquariumTapRipple(
+                id: ripple.id,
+                startedAt: animationEpoch.addingTimeInterval(tapRippleStartTimes[ripple.id] ?? animationElapsed),
+                normalizedLocation: ripple.normalizedLocation
+            )
+        }
     }
 
     private func syncBubbles(with bubbles: [AquariumDynamicBubble]) {
@@ -4250,7 +4370,28 @@ private struct AquariumMetalMotionResolver {
     let petSnapshot: AquariumPetSnapshot
     let feedBursts: [AquariumFeedBurst]
     let tapRipples: [AquariumTapRipple]
+    let animationDate: Date?
     let size: CGSize
+
+    init(
+        configuration: AquariumConfiguration,
+        format: AquariumDisplayFormat,
+        phase: Double,
+        petSnapshot: AquariumPetSnapshot,
+        feedBursts: [AquariumFeedBurst],
+        tapRipples: [AquariumTapRipple],
+        animationDate: Date? = nil,
+        size: CGSize
+    ) {
+        self.configuration = configuration
+        self.format = format
+        self.phase = phase
+        self.petSnapshot = petSnapshot
+        self.feedBursts = feedBursts
+        self.tapRipples = tapRipples
+        self.animationDate = animationDate
+        self.size = size
+    }
 
     private var waterLevel: CGFloat {
         configuration.vesselStyle == .orb ? 0.75 : 0.80
@@ -4260,9 +4401,13 @@ private struct AquariumMetalMotionResolver {
         AquariumSceneTone(at: petSnapshot.date)
     }
 
+    private var motionDate: Date {
+        animationDate ?? petSnapshot.date
+    }
+
     func foodPellets() -> [AquariumFoodPellet] {
         feedBursts.flatMap { burst in
-            let elapsed = petSnapshot.date.timeIntervalSince(burst.startedAt)
+            let elapsed = motionDate.timeIntervalSince(burst.startedAt)
             let dropDuration: TimeInterval = 1.15
             let grazeDuration: TimeInterval = 1.8
             let releaseDuration: TimeInterval = 1.6
@@ -4318,7 +4463,7 @@ private struct AquariumMetalMotionResolver {
 
     func ripples() -> [AquariumVisibleTapRipple] {
         tapRipples.compactMap { ripple in
-            let elapsed = petSnapshot.date.timeIntervalSince(ripple.startedAt)
+            let elapsed = motionDate.timeIntervalSince(ripple.startedAt)
             guard elapsed >= 0, elapsed <= 1.18 else { return nil }
             return AquariumVisibleTapRipple(
                 position: CGPoint(
@@ -4813,20 +4958,22 @@ private struct AquariumMetalBackdropSnapshotView: View {
     }
 
     var body: some View {
-        bodyShape
-            .fill(Color.white.opacity(0.08))
-            .overlay {
-                AquariumMetalStaticInteriorView(
-                    configuration: configuration,
-                    format: format,
-                    phase: phase,
-                    petSnapshot: petSnapshot,
-                    showsDecoration: showsDecoration
-                )
-            }
-            .clipShape(bodyShape)
-            .shadow(color: Color.white.opacity(0.35), radius: 8)
-            .shadow(color: Color.black.opacity(0.16), radius: 22, y: 18)
+        ZStack {
+            AquariumBodyAura(style: configuration.vesselStyle)
+
+            bodyShape
+                .fill(Color.white.opacity(0.08))
+                .overlay {
+                    AquariumMetalStaticInteriorView(
+                        configuration: configuration,
+                        format: format,
+                        phase: phase,
+                        petSnapshot: petSnapshot,
+                        showsDecoration: showsDecoration
+                    )
+                }
+                .clipShape(bodyShape)
+        }
     }
 }
 

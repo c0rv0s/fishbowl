@@ -1065,6 +1065,7 @@ private struct AnimatedAquariumStage: View {
                             petSnapshot: profile.petSnapshot(at: .now),
                             showsDecoration: configuration.decoration != .coralGarden
                         )
+                        .allowsHitTesting(false)
 
                         SpriteKitAquariumSceneView(
                             profile: profile,
@@ -1075,6 +1076,7 @@ private struct AnimatedAquariumStage: View {
                             phaseOffset: restingPhase,
                             isPaused: !isFocused || isScrollFrozen
                         )
+                        .allowsHitTesting(false)
 
                         if configuration.decoration == .coralGarden {
                             AquariumDecorationForegroundOverlayView(
@@ -1082,6 +1084,7 @@ private struct AnimatedAquariumStage: View {
                                 format: format,
                                 phase: restingPhase
                             )
+                            .allowsHitTesting(false)
                         }
                     }
                 } else {
@@ -1090,7 +1093,7 @@ private struct AnimatedAquariumStage: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .contentShape(Rectangle())
-            .gesture(
+            .highPriorityGesture(
                 SpatialTapGesture()
                     .onEnded { value in
                         registerInteraction(at: value.location, in: geometry.size)
@@ -1286,14 +1289,14 @@ private struct AmbientScreenBackdrop: View {
                         .frame(width: size.width * (renderStyle == .lightweight ? 0.94 : 1.06), height: size.height * (renderStyle == .lightweight ? 0.36 : 0.46))
                         .blur(radius: renderStyle == .lightweight ? 62 : 96)
                         .offset(x: -size.width * 0.18, y: size.height * (renderStyle == .lightweight ? 0.00 : 0.05))
-                        .blendMode(colorScheme == .dark ? .screen : .normal)
+                        .blendMode(colorScheme == .dark ? .screen : .multiply)
 
                     Ellipse()
                         .fill(palette[1].opacity(colorScheme == .dark ? secondaryOpacity : secondaryOpacity * 0.74))
                         .frame(width: size.width * (renderStyle == .lightweight ? 0.88 : 1.02), height: size.height * (renderStyle == .lightweight ? 0.34 : 0.44))
                         .blur(radius: renderStyle == .lightweight ? 54 : 90)
                         .offset(x: size.width * 0.18, y: size.height * (renderStyle == .lightweight ? 0.03 : 0.08))
-                        .blendMode(colorScheme == .dark ? .screen : .normal)
+                        .blendMode(colorScheme == .dark ? .screen : .multiply)
 
                     if renderStyle == .full {
                         Ellipse()
@@ -1301,41 +1304,128 @@ private struct AmbientScreenBackdrop: View {
                             .frame(width: size.width * 0.90, height: size.height * 0.38)
                             .blur(radius: 82)
                             .offset(x: 0, y: size.height * 0.20)
-                            .blendMode(colorScheme == .dark ? .screen : .normal)
+                            .blendMode(colorScheme == .dark ? .screen : .multiply)
                     }
 
-                    RoundedRectangle(cornerRadius: size.width * 0.22, style: .continuous)
+                    if colorScheme == .dark {
+                        ZStack {
+                            Ellipse()
+                                .fill(
+                                    LinearGradient(
+                                        colors: [
+                                            palette[0].opacity(renderStyle == .lightweight ? 0.024 : 0.05),
+                                            palette[2].opacity(renderStyle == .lightweight ? 0.032 : 0.07),
+                                            Color.clear,
+                                        ],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
+                                )
+                                .frame(
+                                    width: size.width * (renderStyle == .lightweight ? 0.76 : 0.92),
+                                    height: size.height * (renderStyle == .lightweight ? 0.16 : 0.22)
+                                )
+                                .rotationEffect(.degrees(-6))
+                                .offset(x: -size.width * 0.08, y: size.height * (renderStyle == .lightweight ? 0.08 : 0.13))
+
+                            Ellipse()
+                                .fill(
+                                    LinearGradient(
+                                        colors: [
+                                            Color.clear,
+                                            palette[1].opacity(renderStyle == .lightweight ? 0.028 : 0.06),
+                                            palette[2].opacity(renderStyle == .lightweight ? 0.026 : 0.05),
+                                        ],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
+                                )
+                                .frame(
+                                    width: size.width * (renderStyle == .lightweight ? 0.84 : 0.98),
+                                    height: size.height * (renderStyle == .lightweight ? 0.18 : 0.24)
+                                )
+                                .rotationEffect(.degrees(9))
+                                .offset(x: size.width * 0.10, y: size.height * (renderStyle == .lightweight ? 0.10 : 0.16))
+                        }
+                        .blur(radius: renderStyle == .lightweight ? 44 : 76)
+                        .blendMode(.screen)
+                    } else {
+                        Ellipse()
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        palette[0].opacity(renderStyle == .lightweight ? 0.018 : 0.026),
+                                        palette[2].opacity(renderStyle == .lightweight ? 0.022 : 0.032),
+                                        Color.clear,
+                                    ],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .frame(
+                                width: size.width * (renderStyle == .lightweight ? 0.96 : 1.08),
+                                height: size.height * (renderStyle == .lightweight ? 0.18 : 0.24)
+                            )
+                            .rotationEffect(.degrees(-4))
+                            .blur(radius: renderStyle == .lightweight ? 58 : 88)
+                            .offset(y: size.height * (renderStyle == .lightweight ? 0.10 : 0.15))
+                            .blendMode(.multiply)
+
+                        Ellipse()
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color.clear,
+                                        palette[1].opacity(renderStyle == .lightweight ? 0.016 : 0.024),
+                                        palette[2].opacity(renderStyle == .lightweight ? 0.018 : 0.026),
+                                    ],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .frame(
+                                width: size.width * (renderStyle == .lightweight ? 0.82 : 0.94),
+                                height: size.height * (renderStyle == .lightweight ? 0.16 : 0.20)
+                            )
+                            .rotationEffect(.degrees(11))
+                            .blur(radius: renderStyle == .lightweight ? 52 : 80)
+                            .offset(x: size.width * 0.08, y: size.height * (renderStyle == .lightweight ? 0.12 : 0.17))
+                            .blendMode(.multiply)
+                    }
+                }
+                .opacity(renderStyle == .lightweight ? (colorScheme == .dark ? 0.24 : 0.24) : (colorScheme == .dark ? 0.44 : 0.42))
+                .offset(y: fieldYOffset)
+                .mask {
+                    Rectangle()
                         .fill(
                             LinearGradient(
-                                colors: [
-                                    palette[0].opacity(renderStyle == .lightweight ? 0.02 : (colorScheme == .dark ? 0.05 : 0.03)),
-                                    palette[2].opacity(renderStyle == .lightweight ? 0.03 : (colorScheme == .dark ? 0.07 : 0.05)),
-                                    palette[1].opacity(renderStyle == .lightweight ? 0.03 : (colorScheme == .dark ? 0.06 : 0.04)),
+                                stops: [
+                                    .init(color: .clear, location: 0.00),
+                                    .init(color: .white.opacity(0.06), location: 0.08),
+                                    .init(color: .white, location: 0.22),
+                                    .init(color: .white, location: 0.72),
+                                    .init(color: .white.opacity(0.08), location: 0.88),
+                                    .init(color: .clear, location: 1.00),
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        .overlay {
+                            LinearGradient(
+                                stops: [
+                                    .init(color: .clear, location: 0.00),
+                                    .init(color: .white.opacity(0.12), location: 0.10),
+                                    .init(color: .white, location: 0.24),
+                                    .init(color: .white, location: 0.76),
+                                    .init(color: .white.opacity(0.12), location: 0.90),
+                                    .init(color: .clear, location: 1.00),
                                 ],
                                 startPoint: .leading,
                                 endPoint: .trailing
                             )
-                        )
-                        .frame(width: size.width * (renderStyle == .lightweight ? 0.90 : 1.04), height: size.height * (renderStyle == .lightweight ? 0.20 : 0.30))
-                        .blur(radius: renderStyle == .lightweight ? 42 : 72)
-                        .offset(y: size.height * (renderStyle == .lightweight ? 0.08 : 0.16))
-                        .blendMode(colorScheme == .dark ? .screen : .normal)
-                }
-                .opacity(renderStyle == .lightweight ? (colorScheme == .dark ? 0.24 : 0.36) : (colorScheme == .dark ? 0.44 : 0.60))
-                .offset(y: fieldYOffset)
-                .mask {
-                    LinearGradient(
-                        stops: [
-                            .init(color: .clear, location: 0.00),
-                            .init(color: .white.opacity(0.06), location: 0.08),
-                            .init(color: .white, location: 0.22),
-                            .init(color: .white, location: 0.72),
-                            .init(color: .white.opacity(0.08), location: 0.88),
-                            .init(color: .clear, location: 1.00),
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
+                            .blendMode(.multiply)
+                        }
                 }
 
                 VStack(spacing: 0) {
