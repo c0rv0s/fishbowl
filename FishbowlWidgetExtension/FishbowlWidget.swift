@@ -117,7 +117,7 @@ private struct FishbowlWidgetEntryView: View {
         .padding(sceneInset)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .containerBackground(for: .widget) {
-            WidgetGlassBackground()
+            AquariumTileBackground()
         }
     }
 
@@ -139,18 +139,24 @@ private struct FishbowlWidgetEntryView: View {
                 vesselStyle: .gallery,
                 fishSpecies: entry.profile.configuration.fishSpecies,
                 fishCount: entry.profile.configuration.fishCount,
+                additionalFishSpecies: entry.profile.configuration.additionalFishSpecies,
+                personality: entry.profile.configuration.personality,
                 companion: entry.profile.configuration.companion,
                 substrate: entry.profile.configuration.substrate,
-                decoration: entry.profile.configuration.decoration
+                decoration: entry.profile.configuration.decoration,
+                featurePiece: entry.profile.configuration.featurePiece
             )
         case .systemLarge where entry.profile.configuration.vesselStyle == .orb:
             return AquariumConfiguration(
                 vesselStyle: .panorama,
                 fishSpecies: entry.profile.configuration.fishSpecies,
                 fishCount: entry.profile.configuration.fishCount,
+                additionalFishSpecies: entry.profile.configuration.additionalFishSpecies,
+                personality: entry.profile.configuration.personality,
                 companion: entry.profile.configuration.companion,
                 substrate: entry.profile.configuration.substrate,
-                decoration: entry.profile.configuration.decoration
+                decoration: entry.profile.configuration.decoration,
+                featurePiece: entry.profile.configuration.featurePiece
             )
         default:
             return entry.profile.configuration
@@ -165,42 +171,6 @@ private struct FishbowlWidgetEntryView: View {
             return 4
         default:
             return 6
-        }
-    }
-}
-
-private struct WidgetGlassBackground: View {
-    var body: some View {
-        ZStack {
-            LinearGradient(
-                colors: [
-                    Color(red: 0.90, green: 0.92, blue: 0.96),
-                    Color(red: 0.82, green: 0.84, blue: 0.90),
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-
-            RadialGradient(
-                colors: [
-                    Color.white.opacity(0.78),
-                    Color.clear,
-                ],
-                center: .top,
-                startRadius: 12,
-                endRadius: 220
-            )
-
-            LinearGradient(
-                colors: [
-                    Color.black.opacity(0.14),
-                    Color.clear,
-                    Color.black.opacity(0.08),
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .blur(radius: 24)
         }
     }
 }

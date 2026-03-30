@@ -11,12 +11,15 @@
 		0FC9CB6A91F996E541CCE234 /* FishbowlWidgetExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = D393B54548E0FA8AABB7429C /* FishbowlWidgetExtension.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		1C38F4F7B7D94A5CA9B7B9A1 /* BowlProfileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E0AB8EDC22E4555A3DF52A0 /* BowlProfileStore.swift */; };
 		28AC44286375992DA19D3BA8 /* LiquidGlassBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7FFFCCFCAD1E65EE8D5B96F /* LiquidGlassBackground.swift */; };
+		29C4A87FA8A64BDAA4AF1046 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 5A423E3F820D49BB8CE7A31E /* PrivacyInfo.xcprivacy */; };
 		2AE1202C2020E869D03A6725 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4DC102637752487BF437CDD /* ContentView.swift */; };
 		5582345E3FAB18A25E41EE6E /* AquariumSceneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8490D8A20E8DA00430051ACC /* AquariumSceneView.swift */; };
 		61711C25D07CFEC3CA330933 /* LiquidGlassBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7FFFCCFCAD1E65EE8D5B96F /* LiquidGlassBackground.swift */; };
 		73C5151B9CA6344667B44F4B /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F799020120081E2A88455BD0 /* Foundation.framework */; };
 		75E3906CA1E99178422B83A2 /* FishbowlWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE530932AAE6D8E60719607C /* FishbowlWidgetBundle.swift */; };
 		9077A7A519E82DBF4F2E9FDE /* FishbowlApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDFF2FC725793349D4B33938 /* FishbowlApp.swift */; };
+		9BC4A7D56A1F4E3CB28A1D77 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 7F1DC168360A4767668D3B8A /* Assets.xcassets */; };
+		9E573ACF98434FF3A9D68298 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 5A423E3F820D49BB8CE7A31E /* PrivacyInfo.xcprivacy */; };
 		A160D13F6B5C93559F882223 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F799020120081E2A88455BD0 /* Foundation.framework */; };
 		AF26962BABAC399E540C72CF /* AquariumSceneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8490D8A20E8DA00430051ACC /* AquariumSceneView.swift */; };
 		CE1D33ADB1941E4A1FC08FC4 /* AquariumConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7593474110C4BD59EFB3432C /* AquariumConfiguration.swift */; };
@@ -51,6 +54,7 @@
 /* Begin PBXFileReference section */
 		3FDAC28C13DBDF9CC67A5673 /* FishbowlWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FishbowlWidget.swift; sourceTree = "<group>"; };
 		4E0AB8EDC22E4555A3DF52A0 /* BowlProfileStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BowlProfileStore.swift; sourceTree = "<group>"; };
+		5A423E3F820D49BB8CE7A31E /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		600ED0F0995142C5CC94E4D8 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		6F8F1E3EE858432A83355E6D /* Fishbowl.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = Fishbowl.entitlements; sourceTree = "<group>"; };
 		7593474110C4BD59EFB3432C /* AquariumConfiguration.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AquariumConfiguration.swift; sourceTree = "<group>"; };
@@ -159,6 +163,7 @@
 			children = (
 				7593474110C4BD59EFB3432C /* AquariumConfiguration.swift */,
 				4E0AB8EDC22E4555A3DF52A0 /* BowlProfileStore.swift */,
+				5A423E3F820D49BB8CE7A31E /* PrivacyInfo.xcprivacy */,
 				B7FFFCCFCAD1E65EE8D5B96F /* LiquidGlassBackground.swift */,
 				8490D8A20E8DA00430051ACC /* AquariumSceneView.swift */,
 			);
@@ -247,6 +252,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				9BC4A7D56A1F4E3CB28A1D77 /* Assets.xcassets in Resources */,
+				29C4A87FA8A64BDAA4AF1046 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -254,6 +261,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				9E573ACF98434FF3A9D68298 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

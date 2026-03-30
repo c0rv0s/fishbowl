@@ -20,7 +20,7 @@ project_group = project.main_group
 fishbowl_group = project_group.new_group('Fishbowl', 'Fishbowl')
 app_group = fishbowl_group.new_group('App', 'App')
 shared_group = fishbowl_group.new_group('Shared', 'Shared')
-fishbowl_group.new_file('Assets.xcassets')
+assets_catalog = fishbowl_group.new_file('Assets.xcassets')
 widget_group = project_group.new_group('FishbowlWidgetExtension', 'FishbowlWidgetExtension')
 
 app_sources = %w[
@@ -31,6 +31,7 @@ app_sources = %w[
 shared_sources = %w[
   AquariumConfiguration.swift
   BowlProfileStore.swift
+  PrivacyInfo.xcprivacy
   LiquidGlassBackground.swift
   AquariumSceneView.swift
 ].map { |path| shared_group.new_file(path) }
@@ -47,9 +48,13 @@ widget_group.new_file('FishbowlWidgetExtension.entitlements')
 
 app_target.add_file_references(app_sources + shared_sources)
 widget_target.add_file_references(widget_sources + shared_sources)
+app_target.resources_build_phase.add_file_reference(assets_catalog, true)
+privacy_manifest = shared_sources.find { |file| file.path == 'PrivacyInfo.xcprivacy' }
+app_target.resources_build_phase.add_file_reference(privacy_manifest, true)
+widget_target.resources_build_phase.add_file_reference(privacy_manifest, true)
 app_target.build_configurations.each do |config|
     settings = config.build_settings
-    settings['PRODUCT_BUNDLE_IDENTIFIER'] = 'com.nate.fishbowl'
+    settings['PRODUCT_BUNDLE_IDENTIFIER'] = 'com.nate.fishbowlWidget'
     settings['INFOPLIST_FILE'] = 'Fishbowl/App/Info.plist'
     settings['TARGETED_DEVICE_FAMILY'] = '1,2'
     settings['SWIFT_VERSION'] = '6.0'
@@ -63,7 +68,7 @@ end
 
 widget_target.build_configurations.each do |config|
     settings = config.build_settings
-    settings['PRODUCT_BUNDLE_IDENTIFIER'] = 'com.nate.fishbowl.widget'
+    settings['PRODUCT_BUNDLE_IDENTIFIER'] = 'com.nate.fishbowlWidget.widget'
     settings['INFOPLIST_FILE'] = 'FishbowlWidgetExtension/Info.plist'
     settings['TARGETED_DEVICE_FAMILY'] = '1,2'
     settings['SWIFT_VERSION'] = '6.0'

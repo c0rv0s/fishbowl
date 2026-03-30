@@ -304,7 +304,7 @@ struct BowlProfile: Identifiable, Hashable, Codable, Sendable {
 
 enum BowlRepository {
     static let appGroupID = "group.com.nate.fishbowl"
-    static let maxProfiles = 3
+    static let storageMaxProfiles = 12
     private static let profilesKey = "fishbowl.savedProfiles"
     private static let selectedProfileKey = "fishbowl.selectedProfileID"
     private static let didMigrateEmptyStartKey = "fishbowl.didMigrateEmptyStart"
@@ -399,11 +399,12 @@ enum BowlRepository {
                 name: "Soft Glow",
                 configuration: AquariumConfiguration(
                     vesselStyle: .gallery,
-                    fishSpecies: .glassGold,
+                    fishSpecies: .royalBetta,
                     fishCount: .solo,
                     companion: .none,
                     substrate: .pearlSand,
-                    decoration: .glassPearls
+                    decoration: .riverRocks,
+                    featurePiece: .none
                 ),
                 mode: .decorative,
                 petState: .fresh(at: referenceDate)
@@ -416,7 +417,8 @@ enum BowlRepository {
                     fishCount: .duet,
                     companion: .shrimp,
                     substrate: .moonGravel,
-                    decoration: .riverRocks
+                    decoration: .riverRocks,
+                    featurePiece: .moonLantern
                 ),
                 mode: .pet,
                 petState: .fresh(at: referenceDate.addingTimeInterval(-6 * 60 * 60))
@@ -434,7 +436,7 @@ enum BowlRepository {
                     }
                     return profile
                 }
-                .prefix(maxProfiles)
+                .prefix(storageMaxProfiles)
         )
     }
 
@@ -486,6 +488,44 @@ enum BowlRepository {
     }
 }
 
+enum PremiumAccess {
+    static let productID = "com.nate.fishbowl.premium"
+    static let entitlementKey = "fishbowl.premiumUnlocked"
+    static let freeTankLimit = 3
+    static let premiumTankLimit = 12
+    static let fallbackPrice = "$2.99"
+    #if DEBUG
+    private static let previewUnlockKey = "fishbowl.previewPremiumUnlocked"
+    #endif
+
+    static var isPremiumUnlocked: Bool {
+        let defaults = BowlRepository.defaults()
+        #if DEBUG
+        return defaults.bool(forKey: entitlementKey) || defaults.bool(forKey: previewUnlockKey)
+        #else
+        return defaults.bool(forKey: entitlementKey)
+        #endif
+    }
+
+    static var currentTankLimit: Int {
+        isPremiumUnlocked ? premiumTankLimit : freeTankLimit
+    }
+
+    static func setPremiumUnlocked(_ unlocked: Bool) {
+        BowlRepository.defaults().set(unlocked, forKey: entitlementKey)
+    }
+
+    #if DEBUG
+    static var isPreviewUnlockEnabled: Bool {
+        BowlRepository.defaults().bool(forKey: previewUnlockKey)
+    }
+
+    static func setPreviewUnlockEnabled(_ unlocked: Bool) {
+        BowlRepository.defaults().set(unlocked, forKey: previewUnlockKey)
+    }
+    #endif
+}
+
 private struct SeedSignature: Hashable {
     let name: String
     let configuration: AquariumConfiguration
@@ -512,7 +552,7 @@ final class BowlStudio: ObservableObject {
     }
 
     var canCreateProfile: Bool {
-        profiles.count < BowlRepository.maxProfiles
+        profiles.count < PremiumAccess.currentTankLimit
     }
 
     func selectProfile(_ id: UUID) {
@@ -571,9 +611,14 @@ final class BowlStudio: ObservableObject {
     }
 
     func makeDraftProfile() -> BowlProfile {
-        BowlProfile(
+        var configuration = AquariumConfiguration.hero
+        configuration.companion = .none
+        configuration.substrate = .pearlSand
+        configuration.featurePiece = .none
+
+        return BowlProfile(
             name: generatedName(),
-            configuration: .hero,
+            configuration: configuration,
             mode: .decorative,
             petState: .fresh()
         )

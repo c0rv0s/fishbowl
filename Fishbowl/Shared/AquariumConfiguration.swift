@@ -30,6 +30,19 @@ enum AquariumVesselStyle: String, CaseIterable, Codable, Hashable, Identifiable,
         }
     }
 
+    var isPremium: Bool {
+        self == .panorama
+    }
+
+    var freeFallback: AquariumVesselStyle {
+        switch self {
+        case .panorama:
+            return .gallery
+        default:
+            return self
+        }
+    }
+
     static var typeDisplayRepresentation: TypeDisplayRepresentation {
         TypeDisplayRepresentation(name: "Vessel")
     }
@@ -50,6 +63,7 @@ enum FishSpecies: String, CaseIterable, Codable, Hashable, Identifiable, Sendabl
     case neonGuppy
     case emberTetra
     case opalAngelfish
+    case leopardShark
 
     var id: Self { self }
 
@@ -67,6 +81,8 @@ enum FishSpecies: String, CaseIterable, Codable, Hashable, Identifiable, Sendabl
             return "Ember Tetra"
         case .opalAngelfish:
             return "Opal Angelfish"
+        case .leopardShark:
+            return "Leopard Shark"
         }
     }
 
@@ -84,6 +100,8 @@ enum FishSpecies: String, CaseIterable, Codable, Hashable, Identifiable, Sendabl
             return "A lean ember schooler with jewel-box warmth."
         case .opalAngelfish:
             return "Tall fins and cool iridescence for a couture look."
+        case .leopardShark:
+            return "A tiny spotted shark with sleek silver movement."
         }
     }
 
@@ -125,6 +143,12 @@ enum FishSpecies: String, CaseIterable, Codable, Hashable, Identifiable, Sendabl
                 Color(red: 0.72, green: 0.90, blue: 0.98),
                 Color(red: 0.97, green: 0.98, blue: 1.00),
             ]
+        case .leopardShark:
+            return [
+                Color(red: 0.28, green: 0.32, blue: 0.39),
+                Color(red: 0.67, green: 0.73, blue: 0.80),
+                Color(red: 0.93, green: 0.96, blue: 0.98),
+            ]
         }
     }
 
@@ -142,6 +166,8 @@ enum FishSpecies: String, CaseIterable, Codable, Hashable, Identifiable, Sendabl
             return 38
         case .opalAngelfish:
             return 36
+        case .leopardShark:
+            return 54
         }
     }
 
@@ -159,6 +185,8 @@ enum FishSpecies: String, CaseIterable, Codable, Hashable, Identifiable, Sendabl
             return 20
         case .opalAngelfish:
             return 29
+        case .leopardShark:
+            return 18
         }
     }
 
@@ -176,6 +204,8 @@ enum FishSpecies: String, CaseIterable, Codable, Hashable, Identifiable, Sendabl
             return 0.76
         case .opalAngelfish:
             return 1.05
+        case .leopardShark:
+            return 1.36
         }
     }
 
@@ -193,6 +223,30 @@ enum FishSpecies: String, CaseIterable, Codable, Hashable, Identifiable, Sendabl
             return 0.64
         case .opalAngelfish:
             return 1.34
+        case .leopardShark:
+            return 0.44
+        }
+    }
+
+    var isPremium: Bool {
+        switch self {
+        case .royalBetta, .moonKoi, .neonGuppy, .emberTetra:
+            return false
+        case .glassGold, .opalAngelfish, .leopardShark:
+            return true
+        }
+    }
+
+    var freeFallback: FishSpecies {
+        switch self {
+        case .glassGold:
+            return .emberTetra
+        case .opalAngelfish:
+            return .royalBetta
+        case .leopardShark:
+            return .emberTetra
+        default:
+            return self
         }
     }
 
@@ -208,6 +262,55 @@ enum FishSpecies: String, CaseIterable, Codable, Hashable, Identifiable, Sendabl
             .neonGuppy: DisplayRepresentation(title: "Neon Guppy"),
             .emberTetra: DisplayRepresentation(title: "Ember Tetra"),
             .opalAngelfish: DisplayRepresentation(title: "Opal Angelfish"),
+            .leopardShark: DisplayRepresentation(title: "Leopard Shark"),
+        ]
+    }
+}
+
+enum FishPersonality: String, CaseIterable, Codable, Hashable, Identifiable, Sendable, AppEnum {
+    case playful
+    case shy
+    case greedy
+    case dreamy
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .playful:
+            return "Playful"
+        case .shy:
+            return "Shy"
+        case .greedy:
+            return "Greedy"
+        case .dreamy:
+            return "Dreamy"
+        }
+    }
+
+    var summary: String {
+        switch self {
+        case .playful:
+            return "More movement, more curiosity, more little moments."
+        case .shy:
+            return "Hangs back a bit and keeps a quieter rhythm."
+        case .greedy:
+            return "Rushes food fast and tends to hog the spotlight."
+        case .dreamy:
+            return "Drifts softly and feels calm, floaty, and sleepy."
+        }
+    }
+
+    static var typeDisplayRepresentation: TypeDisplayRepresentation {
+        TypeDisplayRepresentation(name: "Personality")
+    }
+
+    static var caseDisplayRepresentations: [FishPersonality: DisplayRepresentation] {
+        [
+            .playful: DisplayRepresentation(title: "Playful"),
+            .shy: DisplayRepresentation(title: "Shy"),
+            .greedy: DisplayRepresentation(title: "Greedy"),
+            .dreamy: DisplayRepresentation(title: "Dreamy"),
         ]
     }
 }
@@ -259,6 +362,9 @@ enum CompanionStyle: String, CaseIterable, Codable, Hashable, Identifiable, Send
     case snail
     case shrimp
     case crab
+    case seaCucumber
+    case nudibranchFlame
+    case nudibranchRibbon
 
     var id: Self { self }
 
@@ -272,6 +378,12 @@ enum CompanionStyle: String, CaseIterable, Codable, Hashable, Identifiable, Send
             return "Shrimp"
         case .crab:
             return "Crab"
+        case .seaCucumber:
+            return "Sea Cucumber"
+        case .nudibranchFlame:
+            return "Flame Nudibranch"
+        case .nudibranchRibbon:
+            return "Ribbon Nudibranch"
         }
     }
 
@@ -285,6 +397,12 @@ enum CompanionStyle: String, CaseIterable, Codable, Hashable, Identifiable, Send
             return "Shrimp"
         case .crab:
             return "Crab"
+        case .seaCucumber:
+            return "Sea Cucumber"
+        case .nudibranchFlame:
+            return "Flame Nudibranch"
+        case .nudibranchRibbon:
+            return "Ribbon Nudibranch"
         }
     }
 
@@ -298,6 +416,39 @@ enum CompanionStyle: String, CaseIterable, Codable, Hashable, Identifiable, Send
             return "A delicate accent with more motion and color."
         case .crab:
             return "A playful bottom-dweller that anchors the scene."
+        case .seaCucumber:
+            return "A luxe reef-floor companion with a softer, sculptural shape."
+        case .nudibranchFlame:
+            return "A vivid violet nudibranch with flame-orange frills."
+        case .nudibranchRibbon:
+            return "A striped collector nudibranch with orange ribbon edges."
+        }
+    }
+
+    var isPremium: Bool {
+        switch self {
+        case .none, .snail:
+            return false
+        case .shrimp, .crab, .seaCucumber, .nudibranchFlame, .nudibranchRibbon:
+            return true
+        }
+    }
+
+    var freeFallback: CompanionStyle {
+        switch self {
+        case .shrimp, .crab, .seaCucumber, .nudibranchFlame, .nudibranchRibbon:
+            return .snail
+        default:
+            return self
+        }
+    }
+
+    init?(persistedRawValue: String) {
+        switch persistedRawValue {
+        case "nudibranch":
+            self = .nudibranchFlame
+        default:
+            self.init(rawValue: persistedRawValue)
         }
     }
 
@@ -311,6 +462,9 @@ enum CompanionStyle: String, CaseIterable, Codable, Hashable, Identifiable, Send
             .snail: DisplayRepresentation(title: "Snail"),
             .shrimp: DisplayRepresentation(title: "Shrimp"),
             .crab: DisplayRepresentation(title: "Crab"),
+            .seaCucumber: DisplayRepresentation(title: "Sea Cucumber"),
+            .nudibranchFlame: DisplayRepresentation(title: "Flame Nudibranch"),
+            .nudibranchRibbon: DisplayRepresentation(title: "Ribbon Nudibranch"),
         ]
     }
 }
@@ -407,6 +561,26 @@ enum SubstrateStyle: String, CaseIterable, Codable, Hashable, Identifiable, Send
         }
     }
 
+    var isPremium: Bool {
+        switch self {
+        case .pearlSand, .obsidianSand:
+            return false
+        case .coralBloom, .moonGravel:
+            return true
+        }
+    }
+
+    var freeFallback: SubstrateStyle {
+        switch self {
+        case .coralBloom:
+            return .obsidianSand
+        case .moonGravel:
+            return .pearlSand
+        default:
+            return self
+        }
+    }
+
     static var typeDisplayRepresentation: TypeDisplayRepresentation {
         TypeDisplayRepresentation(name: "Substrate")
     }
@@ -484,6 +658,26 @@ enum DecorationStyle: String, CaseIterable, Codable, Hashable, Identifiable, Sen
         }
     }
 
+    var isPremium: Bool {
+        switch self {
+        case .minimal, .riverRocks:
+            return false
+        case .coralGarden, .glassPearls:
+            return true
+        }
+    }
+
+    var freeFallback: DecorationStyle {
+        switch self {
+        case .coralGarden:
+            return .minimal
+        case .glassPearls:
+            return .riverRocks
+        default:
+            return self
+        }
+    }
+
     static var typeDisplayRepresentation: TypeDisplayRepresentation {
         TypeDisplayRepresentation(name: "Decoration")
     }
@@ -498,11 +692,139 @@ enum DecorationStyle: String, CaseIterable, Codable, Hashable, Identifiable, Sen
     }
 }
 
+enum FeaturePieceStyle: String, CaseIterable, Codable, Hashable, Identifiable, Sendable, AppEnum {
+    case none
+    case bubbleStone
+    case driftwoodArch
+    case moonLantern
+    case kelp
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .none:
+            return "No Feature Piece"
+        case .bubbleStone:
+            return "Bubble Stone"
+        case .driftwoodArch:
+            return "Driftwood Arch"
+        case .moonLantern:
+            return "Moon Lantern"
+        case .kelp:
+            return "Kelp"
+        }
+    }
+
+    var shortTitle: String {
+        switch self {
+        case .none:
+            return "Clean"
+        case .bubbleStone:
+            return "Bubble Stone"
+        case .driftwoodArch:
+            return "Driftwood"
+        case .moonLantern:
+            return "Lantern"
+        case .kelp:
+            return "Kelp"
+        }
+    }
+
+    var summary: String {
+        switch self {
+        case .none:
+            return "Keep the scene open and understated."
+        case .bubbleStone:
+            return "A soft bubbling accent that anchors the bowl."
+        case .driftwoodArch:
+            return "A sculptural wood curve for a more natural tank."
+        case .moonLantern:
+            return "A glowing orb detail with a more couture feel."
+        case .kelp:
+            return "Four tall kelp strands that sway up through the water."
+        }
+    }
+
+    var accentColors: [Color] {
+        switch self {
+        case .none:
+            return [Color.clear, Color.clear, Color.clear]
+        case .bubbleStone:
+            return [
+                Color(red: 0.62, green: 0.66, blue: 0.74),
+                Color(red: 0.83, green: 0.87, blue: 0.93),
+                Color(red: 0.95, green: 0.98, blue: 1.00),
+            ]
+        case .driftwoodArch:
+            return [
+                Color(red: 0.43, green: 0.30, blue: 0.20),
+                Color(red: 0.63, green: 0.45, blue: 0.28),
+                Color(red: 0.83, green: 0.67, blue: 0.44),
+            ]
+        case .moonLantern:
+            return [
+                Color(red: 0.73, green: 0.84, blue: 0.98),
+                Color(red: 0.96, green: 0.97, blue: 1.00),
+                Color(red: 0.87, green: 0.90, blue: 0.99),
+            ]
+        case .kelp:
+            return [
+                Color(red: 0.13, green: 0.33, blue: 0.18),
+                Color(red: 0.24, green: 0.57, blue: 0.28),
+                Color(red: 0.58, green: 0.88, blue: 0.52),
+            ]
+        }
+    }
+
+    var isPremium: Bool {
+        switch self {
+        case .none, .bubbleStone:
+            return false
+        case .driftwoodArch, .moonLantern, .kelp:
+            return true
+        }
+    }
+
+    var freeFallback: FeaturePieceStyle {
+        switch self {
+        case .driftwoodArch, .moonLantern, .kelp:
+            return .bubbleStone
+        default:
+            return self
+        }
+    }
+
+    init?(persistedRawValue: String) {
+        switch persistedRawValue {
+        case "shellCluster":
+            self = .kelp
+        default:
+            self.init(rawValue: persistedRawValue)
+        }
+    }
+
+    static var typeDisplayRepresentation: TypeDisplayRepresentation {
+        TypeDisplayRepresentation(name: "Feature Piece")
+    }
+
+    static var caseDisplayRepresentations: [FeaturePieceStyle: DisplayRepresentation] {
+        [
+            .none: DisplayRepresentation(title: "No Feature Piece"),
+            .bubbleStone: DisplayRepresentation(title: "Bubble Stone"),
+            .driftwoodArch: DisplayRepresentation(title: "Driftwood Arch"),
+            .moonLantern: DisplayRepresentation(title: "Moon Lantern"),
+            .kelp: DisplayRepresentation(title: "Kelp"),
+        ]
+    }
+}
+
 enum AquariumDisplayFormat: String, CaseIterable, Identifiable, Sendable {
     case studioHero
     case widgetSmall
     case widgetMedium
     case widgetLarge
+    case appIcon
 
     var id: Self { self }
 
@@ -516,6 +838,8 @@ enum AquariumDisplayFormat: String, CaseIterable, Identifiable, Sendable {
             return "Medium"
         case .widgetLarge:
             return "Large"
+        case .appIcon:
+            return "App Icon"
         }
     }
 
@@ -528,6 +852,8 @@ enum AquariumDisplayFormat: String, CaseIterable, Identifiable, Sendable {
         case .widgetMedium:
             return 2.14
         case .widgetLarge:
+            return 1.0
+        case .appIcon:
             return 1.0
         }
     }
@@ -542,6 +868,8 @@ enum AquariumDisplayFormat: String, CaseIterable, Identifiable, Sendable {
             return 164
         case .widgetLarge:
             return 214
+        case .appIcon:
+            return 164
         }
     }
 
@@ -555,6 +883,8 @@ enum AquariumDisplayFormat: String, CaseIterable, Identifiable, Sendable {
             return 6
         case .widgetLarge:
             return 8
+        case .appIcon:
+            return 6
         }
     }
 }
@@ -563,28 +893,88 @@ struct AquariumConfiguration: Hashable, Codable, Sendable {
     var vesselStyle: AquariumVesselStyle
     var fishSpecies: FishSpecies
     var fishCount: FishCount
+    var additionalFishSpecies: [FishSpecies]
+    var personality: FishPersonality
     var companion: CompanionStyle
     var substrate: SubstrateStyle
     var decoration: DecorationStyle
+    var featurePiece: FeaturePieceStyle
+
+    init(
+        vesselStyle: AquariumVesselStyle,
+        fishSpecies: FishSpecies,
+        fishCount: FishCount,
+        additionalFishSpecies: [FishSpecies] = [],
+        personality: FishPersonality = .playful,
+        companion: CompanionStyle,
+        substrate: SubstrateStyle,
+        decoration: DecorationStyle,
+        featurePiece: FeaturePieceStyle
+    ) {
+        self.vesselStyle = vesselStyle
+        self.fishSpecies = fishSpecies
+        self.fishCount = fishCount
+        self.additionalFishSpecies = additionalFishSpecies
+        self.personality = personality
+        self.companion = companion
+        self.substrate = substrate
+        self.decoration = decoration
+        self.featurePiece = featurePiece
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case vesselStyle
+        case fishSpecies
+        case fishCount
+        case additionalFishSpecies
+        case personality
+        case companion
+        case substrate
+        case decoration
+        case featurePiece
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        vesselStyle = try container.decode(AquariumVesselStyle.self, forKey: .vesselStyle)
+        fishSpecies = try container.decode(FishSpecies.self, forKey: .fishSpecies)
+        fishCount = try container.decode(FishCount.self, forKey: .fishCount)
+        additionalFishSpecies = try container.decodeIfPresent([FishSpecies].self, forKey: .additionalFishSpecies) ?? []
+        personality = try container.decodeIfPresent(FishPersonality.self, forKey: .personality) ?? .playful
+        if let companionRaw = try container.decodeIfPresent(String.self, forKey: .companion) {
+            companion = CompanionStyle(persistedRawValue: companionRaw) ?? .none
+        } else {
+            companion = .none
+        }
+        substrate = try container.decode(SubstrateStyle.self, forKey: .substrate)
+        decoration = try container.decode(DecorationStyle.self, forKey: .decoration)
+        if let featurePieceRaw = try container.decodeIfPresent(String.self, forKey: .featurePiece) {
+            featurePiece = FeaturePieceStyle(persistedRawValue: featurePieceRaw) ?? .none
+        } else {
+            featurePiece = .none
+        }
+    }
 
     static let hero = AquariumConfiguration(
         vesselStyle: .orb,
         fishSpecies: .royalBetta,
         fishCount: .duet,
-        companion: .shrimp,
-        substrate: .coralBloom,
-        decoration: .coralGarden
+        companion: .snail,
+        substrate: .obsidianSand,
+        decoration: .minimal,
+        featurePiece: .bubbleStone
     )
 
     static let curatedPresets: [AquariumConfiguration] = [
         .hero,
         AquariumConfiguration(
             vesselStyle: .gallery,
-            fishSpecies: .glassGold,
+            fishSpecies: .royalBetta,
             fishCount: .solo,
             companion: .none,
             substrate: .pearlSand,
-            decoration: .glassPearls
+            decoration: .riverRocks,
+            featurePiece: .none
         ),
         AquariumConfiguration(
             vesselStyle: .panorama,
@@ -592,19 +982,92 @@ struct AquariumConfiguration: Hashable, Codable, Sendable {
             fishCount: .trio,
             companion: .crab,
             substrate: .moonGravel,
-            decoration: .riverRocks
+            decoration: .riverRocks,
+            featurePiece: .moonLantern
         ),
     ]
 
+    static let appIcon = AquariumConfiguration(
+        vesselStyle: .orb,
+        fishSpecies: .moonKoi,
+        fishCount: .solo,
+        companion: .none,
+        substrate: .moonGravel,
+        decoration: .riverRocks,
+        featurePiece: .bubbleStone
+    )
+
+    var resolvedFishSpecies: [FishSpecies] {
+        let targetCount = max(1, fishCount.value)
+        let extras = Array(additionalFishSpecies.prefix(max(0, targetCount - 1)))
+        return [fishSpecies] + extras
+    }
+
+    var uniqueFishSpecies: [FishSpecies] {
+        var seen = Set<FishSpecies>()
+        return resolvedFishSpecies.filter { seen.insert($0).inserted }
+    }
+
+    var fishPalette: [Color] {
+        uniqueFishSpecies.flatMap(\.palette)
+    }
+
     var descriptor: String {
-        "\(fishCount.title) \(fishSpecies.title)"
+        let renderedCount = resolvedFishSpecies.count
+        if uniqueFishSpecies.count > 1 {
+            return "\(fishCountTitle(for: renderedCount)) Mixed Fish"
+        }
+        return "\(fishCountTitle(for: renderedCount)) \(fishSpecies.title)"
     }
 
     var detailLine: String {
-        var parts = [substrate.title, decoration.title]
+        var parts: [String] = []
+        if uniqueFishSpecies.count > 1 {
+            parts.append(uniqueFishSpecies.map(\.title).joined(separator: " + "))
+        }
+        parts.append(personality.title)
+        parts += [substrate.title, decoration.title]
+        if featurePiece != .none {
+            parts.append(featurePiece.shortTitle)
+        }
         if companion != .none {
             parts.append(companion.shortTitle)
         }
         return parts.joined(separator: " • ")
+    }
+
+    func sanitizedForFreeTier() -> AquariumConfiguration {
+        AquariumConfiguration(
+            vesselStyle: vesselStyle.freeFallback,
+            fishSpecies: fishSpecies.freeFallback,
+            fishCount: fishCount,
+            additionalFishSpecies: [],
+            personality: personality,
+            companion: companion.freeFallback,
+            substrate: substrate.freeFallback,
+            decoration: decoration.freeFallback,
+            featurePiece: featurePiece.freeFallback
+        )
+    }
+
+    var requiresPremiumUnlock: Bool {
+        vesselStyle.isPremium
+        || fishSpecies.isPremium
+        || companion.isPremium
+        || substrate.isPremium
+        || decoration.isPremium
+        || featurePiece.isPremium
+        || uniqueFishSpecies.count > 1
+    }
+
+    private func fishCountTitle(for count: Int) -> String {
+        switch count {
+        case 1:
+            return FishCount.solo.title
+        case 2:
+            return FishCount.duet.title
+        default:
+            return FishCount.trio.title
+        }
     }
 }
