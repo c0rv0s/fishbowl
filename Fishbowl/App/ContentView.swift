@@ -34,6 +34,9 @@ struct ContentView: View {
                                 onFeed: { xFraction in
                                     dropFood(in: profile, at: xFraction)
                                 },
+                                onFeedConsumed: { burstID in
+                                    finishFeeding(in: profile, burstID: burstID)
+                                },
                                 onDelete: {
                                     deletingProfile = profile
                                 }
@@ -125,13 +128,25 @@ struct ContentView: View {
         let now = Date.now
         let clampedX = min(max(xFraction, 0.18), 0.82)
         let activeBursts = feedBurstsByProfileID[profile.id, default: []]
-            .filter { now.timeIntervalSince($0.startedAt) < 1.6 }
+            .filter { $0.endsAt > now }
 
-        feedBurstsByProfileID[profile.id] = activeBursts + [
+        feedBurstsByProfileID[profile.id] = activeBursts
+        guard activeBursts.isEmpty else { return }
+
+        feedBurstsByProfileID[profile.id] = [
             AquariumFeedBurst(startedAt: now, xFraction: clampedX)
         ]
+    }
 
-        studio.feedProfile(id: profile.id, at: now)
+    private func finishFeeding(in profile: BowlProfile, burstID: UUID) {
+        let currentBursts = feedBurstsByProfileID[profile.id, default: []]
+        guard currentBursts.contains(where: { $0.id == burstID }) else { return }
+
+        feedBurstsByProfileID[profile.id] = currentBursts.filter { $0.id != burstID }
+        let willBurst = profile.willBurstOnNextFeed(at: .now)
+        withAnimation(.easeInOut(duration: willBurst ? 0.72 : 0.34)) {
+            studio.feedProfile(id: profile.id, at: .now)
+        }
     }
 
     private var pageIDs: [TankPageID] {
@@ -173,48 +188,30 @@ private struct TankHomePage: View {
     let safeAreaInsets: EdgeInsets
     let feedBursts: [AquariumFeedBurst]
     let onFeed: (CGFloat) -> Void
+    let onFeedConsumed: AquariumFeedBurstConsumedHandler
     let onDelete: () -> Void
     @State private var shareImage: UIImage?
+
+    private var layoutScale: CGFloat {
+        min(max(UIScreen.main.bounds.width / 390, 1.0), 1.12)
+    }
 
     private var snapshot: AquariumPetSnapshot {
         profile.petSnapshot(at: .now)
     }
 
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            AmbientScreenBackdrop(
-                configuration: profile.configuration,
-                renderStyle: .lightweight
-            )
+        GeometryReader { geometry in
+            let horizontalPadding = 24 * layoutScale
+            let tankSize = max(0, geometry.size.width - horizontalPadding * 2)
+            let headerTop = max(22, safeAreaInsets.top + 10)
+            let cardBottom = max(24, safeAreaInsets.bottom + 8)
 
-            VStack(alignment: .leading, spacing: 18) {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(profile.name)
-                            .font(.system(size: 44, weight: .medium, design: .serif))
-                            .foregroundStyle(colorScheme.fishbowlPrimaryText)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.75)
-
-                        Text(subtitleText)
-                            .font(.system(size: 16, weight: .medium, design: .rounded))
-                            .foregroundStyle(colorScheme.fishbowlSecondaryText)
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    Spacer(minLength: 14)
-
-                    HStack(spacing: 10) {
-                        IconGlassButton(systemImage: "square.and.arrow.up") {
-                            shareImage = renderShareImage()
-                        }
-
-                        IconGlassButton(systemImage: "trash") {
-                            onDelete()
-                        }
-                    }
-                }
+            ZStack(alignment: .bottomLeading) {
+                AmbientScreenBackdrop(
+                    configuration: profile.configuration,
+                    renderStyle: .lightweight
+                )
 
                 AnimatedAquariumStage(
                     profile: profile,
@@ -224,20 +221,53 @@ private struct TankHomePage: View {
                     isPrepared: isLivePrepared,
                     isScrollFrozen: isScrollFrozen,
                     feedBursts: feedBursts,
-                    onFeed: onFeed
+                    onFeed: onFeed,
+                    onFeedConsumed: onFeedConsumed
                 )
-                .frame(maxWidth: .infinity)
-                .aspectRatio(1, contentMode: .fit)
+                .frame(width: tankSize, height: tankSize)
+                .position(x: geometry.size.width * 0.5, y: geometry.size.height * 0.5)
 
-                Spacer(minLength: 0)
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(profile.name)
+                                .font(.system(size: 44 * layoutScale, weight: .medium, design: .serif))
+                                .foregroundStyle(colorScheme.fishbowlPrimaryText)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.75)
+
+                            Text(subtitleText)
+                                .font(.system(size: 16 * layoutScale, weight: .medium, design: .rounded))
+                                .foregroundStyle(colorScheme.fishbowlSecondaryText)
+                                .lineLimit(2)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                        Spacer(minLength: 14)
+
+                        HStack(spacing: 10) {
+                            IconGlassButton(systemImage: "square.and.arrow.up") {
+                                shareImage = renderShareImage()
+                            }
+
+                            IconGlassButton(systemImage: "trash") {
+                                onDelete()
+                            }
+                        }
+                    }
+                    .frame(minHeight: 92 * layoutScale, alignment: .top)
+
+                    Spacer(minLength: 0)
+                }
+                .padding(.top, headerTop)
+                .padding(.horizontal, horizontalPadding)
+                .padding(.bottom, max(28, safeAreaInsets.bottom + 14))
+
+                TankDetailCard(profile: profile)
+                    .padding(.horizontal, horizontalPadding)
+                    .padding(.bottom, cardBottom)
             }
-            .padding(.top, max(22, safeAreaInsets.top + 10))
-            .padding(.horizontal, 24)
-            .padding(.bottom, max(28, safeAreaInsets.bottom + 14))
-
-            TankDetailCard(profile: profile)
-                .padding(.horizontal, 24)
-                .padding(.bottom, max(24, safeAreaInsets.bottom + 8))
         }
         .sheet(
             isPresented: Binding(
@@ -262,7 +292,9 @@ private struct TankHomePage: View {
         case .pet:
             return snapshot.isAlive
             ? "\(snapshot.mood.title) • \(subtitlePrompt)"
-            : "Gone • Delete this tank to make a new one"
+            : (snapshot.mood == .burst
+               ? "Popped • Delete this tank to make a new one"
+               : "Gone • Delete this tank to make a new one")
         }
     }
 
@@ -272,12 +304,16 @@ private struct TankHomePage: View {
             return "Made for your Home Screen"
         case .content:
             return "Tap the tank to drop food in"
+        case .stuffed:
+            return "They are digesting"
         case .hungry:
             return "Tap the tank to feed your fish"
         case .critical:
             return "Feed this tank now"
         case .dead:
             return "Delete this tank to make a new one"
+        case .burst:
+            return "You fed this one too much"
         }
     }
 
@@ -478,6 +514,21 @@ private struct TankComposerScreen: View {
         freeFirst(Array(CompanionStyle.allCases)) { $0.isPremium }
     }
 
+    private var companionSlotLimit: Int {
+        premiumStore.isPremiumUnlocked ? 3 : 1
+    }
+
+    private var visibleCompanionSlotCount: Int {
+        if !premiumStore.isPremiumUnlocked {
+            return 1
+        }
+
+        return min(
+            companionSlotLimit,
+            max(1, min(companionSlotLimit, draft.configuration.resolvedCompanions.count + 1))
+        )
+    }
+
     private var extraFishSlotCount: Int {
         max(0, draft.configuration.fishCount.value - 1)
     }
@@ -491,6 +542,10 @@ private struct TankComposerScreen: View {
             extraFishSlotCount,
             max(1, min(extraFishSlotCount, draft.configuration.additionalFishSpecies.count + 1))
         )
+    }
+
+    private var previewHeroHeight: CGFloat {
+        min(max(UIScreen.main.bounds.width * 0.92, 360), 420)
     }
 
     var body: some View {
@@ -558,6 +613,27 @@ private struct TankComposerScreen: View {
         draft.configuration.additionalFishSpecies = Array(extras.prefix(requiredCount))
     }
 
+    private func selectedCompanion(at slot: Int) -> CompanionStyle? {
+        guard slot < draft.configuration.resolvedCompanions.count else { return nil }
+        return draft.configuration.resolvedCompanions[slot]
+    }
+
+    private func setCompanion(_ companion: CompanionStyle?, at slot: Int) {
+        var companions = Array(draft.configuration.resolvedCompanions.prefix(companionSlotLimit))
+        guard slot < companionSlotLimit else { return }
+
+        if let companion, companion != .none {
+            while companions.count <= slot {
+                companions.append(.snail)
+            }
+            companions[slot] = companion
+        } else {
+            companions = Array(companions.prefix(slot))
+        }
+
+        draft.configuration.companions = Array(companions.prefix(companionSlotLimit))
+    }
+
     private var composerHeader: some View {
         GlassPanel(cornerRadius: 34) {
             VStack(alignment: .leading, spacing: 14) {
@@ -584,7 +660,7 @@ private struct TankComposerScreen: View {
                         .font(.system(size: 38, weight: .medium, design: .serif))
                         .foregroundStyle(colorScheme.fishbowlPrimaryText)
 
-                    Text("Set the name, choose the fish, and decide if this one is just for looks or if it needs feeding.")
+                    Text("Set the name, choose the fish, and decide if this one stays a pet or just sits there and looks good.")
                         .font(.system(size: 16, weight: .medium, design: .rounded))
                         .foregroundStyle(colorScheme.fishbowlSecondaryText)
                         .fixedSize(horizontal: false, vertical: true)
@@ -613,7 +689,7 @@ private struct TankComposerScreen: View {
                             petSnapshot: draft.petSnapshot(at: .now)
                         )
                         .frame(maxWidth: .infinity)
-                        .frame(height: 360)
+                        .frame(height: previewHeroHeight)
                         .drawingGroup(opaque: false)
                     default:
                         WidgetSizePreview(
@@ -643,11 +719,11 @@ private struct TankComposerScreen: View {
 
     private var detailsSection: some View {
         GlassPanel {
-            VStack(alignment: .leading, spacing: 14) {
-                SectionEyebrow(
-                    title: "Details",
-                    detail: "Give this tank a name and decide if it is decorative or a pet."
-                )
+                VStack(alignment: .leading, spacing: 14) {
+                    SectionEyebrow(
+                        title: "Details",
+                        detail: "Give this tank a name. Pet mode is the default, but you can switch it to decorative."
+                    )
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("TANK NAME")
@@ -838,37 +914,38 @@ private struct TankComposerScreen: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 10) {
                             ForEach(orderedSubstrates) { option in
-                            SelectablePill(
-                                title: option.title,
-                                subtitle: option.summary,
-                                isSelected: draft.configuration.substrate == option,
-                                badge: premiumBadge(isPremium: option.isPremium),
-                                isLocked: option.isPremium && !premiumStore.isPremiumUnlocked
-                            ) {
-                                if option.isPremium && !premiumStore.isPremiumUnlocked {
-                                    isPremiumSheetPresented = true
-                                } else {
-                                    draft.configuration.substrate = option
+                                SelectablePill(
+                                    title: option.title,
+                                    subtitle: option.summary,
+                                    isSelected: draft.configuration.substrate == option,
+                                    badge: premiumBadge(isPremium: option.isPremium),
+                                    isLocked: option.isPremium && !premiumStore.isPremiumUnlocked
+                                ) {
+                                    if option.isPremium && !premiumStore.isPremiumUnlocked {
+                                        isPremiumSheetPresented = true
+                                    } else {
+                                        draft.configuration.substrate = option
+                                    }
                                 }
                             }
                         }
-                    }
                     }
 
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 10) {
                             ForEach(orderedDecorations) { option in
-                            SelectablePill(
-                                title: option.title,
-                                subtitle: option.summary,
-                                isSelected: draft.configuration.decoration == option,
-                                badge: premiumBadge(isPremium: option.isPremium),
-                                isLocked: option.isPremium && !premiumStore.isPremiumUnlocked
-                            ) {
-                                if option.isPremium && !premiumStore.isPremiumUnlocked {
-                                    isPremiumSheetPresented = true
-                                } else {
-                                    draft.configuration.decoration = option
+                                SelectablePill(
+                                    title: option.title,
+                                    subtitle: option.summary,
+                                    isSelected: draft.configuration.decoration == option,
+                                    badge: premiumBadge(isPremium: option.isPremium),
+                                    isLocked: option.isPremium && !premiumStore.isPremiumUnlocked
+                                ) {
+                                    if option.isPremium && !premiumStore.isPremiumUnlocked {
+                                        isPremiumSheetPresented = true
+                                    } else {
+                                        draft.configuration.decoration = option
+                                    }
                                 }
                             }
                         }
@@ -894,35 +971,55 @@ private struct TankComposerScreen: View {
                         }
                     }
                 }
-                }
             }
 
             GlassPanel {
                 VStack(alignment: .leading, spacing: 14) {
                     SectionEyebrow(
                         title: "Companion",
-                        detail: "Add a snail, shrimp, or crab, or leave it simple."
+                        detail: premiumStore.isPremiumUnlocked
+                        ? "Pick up to three companions, or leave the tank simple."
+                        : "Pick one companion, or leave the tank simple."
                     )
 
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 10) {
-                            ForEach(orderedCompanions) { option in
-                            SelectablePill(
-                                title: option.title,
-                                subtitle: option.summary,
-                                isSelected: draft.configuration.companion == option,
-                                badge: premiumBadge(isPremium: option.isPremium),
-                                isLocked: option.isPremium && !premiumStore.isPremiumUnlocked
-                            ) {
-                                if option.isPremium && !premiumStore.isPremiumUnlocked {
-                                    isPremiumSheetPresented = true
-                                } else {
-                                    draft.configuration.companion = option
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(0..<visibleCompanionSlotCount, id: \.self) { slot in
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("COMPANION \(slot + 1)")
+                                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                    .tracking(1.2)
+                                    .foregroundStyle(.secondary)
+
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 10) {
+                                        SelectablePill(
+                                            title: "None",
+                                            subtitle: "Leave this slot empty",
+                                            isSelected: selectedCompanion(at: slot) == nil
+                                        ) {
+                                            setCompanion(nil, at: slot)
+                                        }
+
+                                        ForEach(orderedCompanions.filter { $0 != .none }) { option in
+                                            SelectablePill(
+                                                title: option.title,
+                                                subtitle: option.summary,
+                                                isSelected: selectedCompanion(at: slot) == option,
+                                                badge: premiumBadge(isPremium: option.isPremium || slot > 0),
+                                                isLocked: (option.isPremium || slot > 0) && !premiumStore.isPremiumUnlocked
+                                            ) {
+                                                if (option.isPremium || slot > 0) && !premiumStore.isPremiumUnlocked {
+                                                    isPremiumSheetPresented = true
+                                                } else {
+                                                    setCompanion(option, at: slot)
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
-                }
                 }
             }
         }
@@ -1025,11 +1122,11 @@ private struct WidgetSizePreview: View {
 
         switch format {
         case .widgetSmall:
-            width = min(176, availableWidth * 0.56)
+            width = min(190, availableWidth * 0.60)
         case .widgetMedium:
-            width = min(availableWidth, 350)
+            width = min(availableWidth, 380)
         case .widgetLarge:
-            width = min(availableWidth, 350)
+            width = min(availableWidth, 390)
         default:
             width = availableWidth
         }
@@ -1047,6 +1144,7 @@ private struct AnimatedAquariumStage: View {
     let isScrollFrozen: Bool
     let feedBursts: [AquariumFeedBurst]
     let onFeed: (CGFloat) -> Void
+    let onFeedConsumed: AquariumFeedBurstConsumedHandler
     @State private var tapRipples: [AquariumTapRipple] = []
 
     private var restingPhase: Double {
@@ -1074,7 +1172,8 @@ private struct AnimatedAquariumStage: View {
                             feedBursts: feedBursts,
                             tapRipples: tapRipples,
                             phaseOffset: restingPhase,
-                            isPaused: !isFocused || isScrollFrozen
+                            isPaused: !isFocused || isScrollFrozen,
+                            onFeedBurstConsumed: onFeedConsumed
                         )
                         .allowsHitTesting(false)
 
@@ -1137,6 +1236,10 @@ private struct TankDetailCard: View {
 
     let profile: BowlProfile
 
+    private var maxCardWidth: CGFloat {
+        min(max(320, UIScreen.main.bounds.width - 56), 360)
+    }
+
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
@@ -1160,7 +1263,7 @@ private struct TankDetailCard: View {
 
             Spacer(minLength: 0)
         }
-        .frame(maxWidth: 320, alignment: .leading)
+        .frame(maxWidth: maxCardWidth, alignment: .leading)
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
         .background {

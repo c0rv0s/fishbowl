@@ -56,7 +56,7 @@ enum AquariumVesselStyle: String, CaseIterable, Codable, Hashable, Identifiable,
     }
 }
 
-enum FishSpecies: String, CaseIterable, Codable, Hashable, Identifiable, Sendable, AppEnum {
+enum FishSpecies: String, CaseIterable, Hashable, Identifiable, Sendable, AppEnum {
     case royalBetta
     case moonKoi
     case glassGold
@@ -264,6 +264,27 @@ enum FishSpecies: String, CaseIterable, Codable, Hashable, Identifiable, Sendabl
             .opalAngelfish: DisplayRepresentation(title: "Opal Angelfish"),
             .leopardShark: DisplayRepresentation(title: "Leopard Shark"),
         ]
+    }
+}
+
+extension FishSpecies: Codable {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let raw = try container.decode(String.self)
+        if raw == "seahorse" {
+            self = .moonKoi
+            return
+        }
+        guard let value = FishSpecies(rawValue: raw) else {
+            self = .royalBetta
+            return
+        }
+        self = value
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
     }
 }
 
@@ -895,7 +916,7 @@ struct AquariumConfiguration: Hashable, Codable, Sendable {
     var fishCount: FishCount
     var additionalFishSpecies: [FishSpecies]
     var personality: FishPersonality
-    var companion: CompanionStyle
+    var companions: [CompanionStyle]
     var substrate: SubstrateStyle
     var decoration: DecorationStyle
     var featurePiece: FeaturePieceStyle
@@ -906,7 +927,8 @@ struct AquariumConfiguration: Hashable, Codable, Sendable {
         fishCount: FishCount,
         additionalFishSpecies: [FishSpecies] = [],
         personality: FishPersonality = .playful,
-        companion: CompanionStyle,
+        companion: CompanionStyle = .none,
+        companions: [CompanionStyle]? = nil,
         substrate: SubstrateStyle,
         decoration: DecorationStyle,
         featurePiece: FeaturePieceStyle
@@ -916,7 +938,7 @@ struct AquariumConfiguration: Hashable, Codable, Sendable {
         self.fishCount = fishCount
         self.additionalFishSpecies = additionalFishSpecies
         self.personality = personality
-        self.companion = companion
+        self.companions = Self.normalizedCompanions(companions ?? [companion])
         self.substrate = substrate
         self.decoration = decoration
         self.featurePiece = featurePiece
@@ -929,6 +951,7 @@ struct AquariumConfiguration: Hashable, Codable, Sendable {
         case additionalFishSpecies
         case personality
         case companion
+        case companions
         case substrate
         case decoration
         case featurePiece
@@ -941,10 +964,14 @@ struct AquariumConfiguration: Hashable, Codable, Sendable {
         fishCount = try container.decode(FishCount.self, forKey: .fishCount)
         additionalFishSpecies = try container.decodeIfPresent([FishSpecies].self, forKey: .additionalFishSpecies) ?? []
         personality = try container.decodeIfPresent(FishPersonality.self, forKey: .personality) ?? .playful
-        if let companionRaw = try container.decodeIfPresent(String.self, forKey: .companion) {
-            companion = CompanionStyle(persistedRawValue: companionRaw) ?? .none
+        if let companionRaws = try container.decodeIfPresent([String].self, forKey: .companions) {
+            companions = Self.normalizedCompanions(
+                companionRaws.compactMap { CompanionStyle(persistedRawValue: $0) }
+            )
+        } else if let companionRaw = try container.decodeIfPresent(String.self, forKey: .companion) {
+            companions = Self.normalizedCompanions([CompanionStyle(persistedRawValue: companionRaw) ?? .none])
         } else {
-            companion = .none
+            companions = []
         }
         substrate = try container.decode(SubstrateStyle.self, forKey: .substrate)
         decoration = try container.decode(DecorationStyle.self, forKey: .decoration)
@@ -955,11 +982,24 @@ struct AquariumConfiguration: Hashable, Codable, Sendable {
         }
     }
 
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(vesselStyle, forKey: .vesselStyle)
+        try container.encode(fishSpecies, forKey: .fishSpecies)
+        try container.encode(fishCount, forKey: .fishCount)
+        try container.encode(additionalFishSpecies, forKey: .additionalFishSpecies)
+        try container.encode(personality, forKey: .personality)
+        try container.encode(resolvedCompanions.map(\.rawValue), forKey: .companions)
+        try container.encode(substrate, forKey: .substrate)
+        try container.encode(decoration, forKey: .decoration)
+        try container.encode(featurePiece, forKey: .featurePiece)
+    }
+
     static let hero = AquariumConfiguration(
         vesselStyle: .orb,
         fishSpecies: .royalBetta,
         fishCount: .duet,
-        companion: .snail,
+        companions: [.snail],
         substrate: .obsidianSand,
         decoration: .minimal,
         featurePiece: .bubbleStone
@@ -980,7 +1020,7 @@ struct AquariumConfiguration: Hashable, Codable, Sendable {
             vesselStyle: .panorama,
             fishSpecies: .moonKoi,
             fishCount: .trio,
-            companion: .crab,
+            companions: [.crab],
             substrate: .moonGravel,
             decoration: .riverRocks,
             featurePiece: .moonLantern
@@ -991,7 +1031,7 @@ struct AquariumConfiguration: Hashable, Codable, Sendable {
         vesselStyle: .orb,
         fishSpecies: .moonKoi,
         fishCount: .solo,
-        companion: .none,
+        companions: [],
         substrate: .moonGravel,
         decoration: .riverRocks,
         featurePiece: .bubbleStone
@@ -1000,7 +1040,18 @@ struct AquariumConfiguration: Hashable, Codable, Sendable {
     var resolvedFishSpecies: [FishSpecies] {
         let targetCount = max(1, fishCount.value)
         let extras = Array(additionalFishSpecies.prefix(max(0, targetCount - 1)))
-        return [fishSpecies] + extras
+        return [fishSpecies] + (0..<(targetCount - 1)).map { index in
+            extras.indices.contains(index) ? extras[index] : fishSpecies
+        }
+    }
+
+    var companion: CompanionStyle {
+        get { resolvedCompanions.first ?? .none }
+        set { companions = Self.normalizedCompanions([newValue]) }
+    }
+
+    var resolvedCompanions: [CompanionStyle] {
+        Self.normalizedCompanions(companions)
     }
 
     var uniqueFishSpecies: [FishSpecies] {
@@ -1030,8 +1081,8 @@ struct AquariumConfiguration: Hashable, Codable, Sendable {
         if featurePiece != .none {
             parts.append(featurePiece.shortTitle)
         }
-        if companion != .none {
-            parts.append(companion.shortTitle)
+        if !resolvedCompanions.isEmpty {
+            parts.append(resolvedCompanions.map(\.shortTitle).joined(separator: " + "))
         }
         return parts.joined(separator: " • ")
     }
@@ -1043,7 +1094,7 @@ struct AquariumConfiguration: Hashable, Codable, Sendable {
             fishCount: fishCount,
             additionalFishSpecies: [],
             personality: personality,
-            companion: companion.freeFallback,
+            companions: resolvedCompanions.prefix(1).map(\.freeFallback),
             substrate: substrate.freeFallback,
             decoration: decoration.freeFallback,
             featurePiece: featurePiece.freeFallback
@@ -1053,11 +1104,19 @@ struct AquariumConfiguration: Hashable, Codable, Sendable {
     var requiresPremiumUnlock: Bool {
         vesselStyle.isPremium
         || fishSpecies.isPremium
-        || companion.isPremium
+        || resolvedCompanions.contains(where: \.isPremium)
         || substrate.isPremium
         || decoration.isPremium
         || featurePiece.isPremium
         || uniqueFishSpecies.count > 1
+        || resolvedCompanions.count > 1
+    }
+
+    private static func normalizedCompanions(_ companions: [CompanionStyle]) -> [CompanionStyle] {
+        companions
+            .filter { $0 != .none }
+            .prefix(3)
+            .map { $0 }
     }
 
     private func fishCountTitle(for count: Int) -> String {

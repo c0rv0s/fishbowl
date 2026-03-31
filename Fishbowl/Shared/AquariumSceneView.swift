@@ -9,7 +9,18 @@ import MetalKit
 import UIKit
 #endif
 
+typealias AquariumFeedBurstConsumedHandler = @MainActor @Sendable (UUID) -> Void
+
 struct AquariumFeedBurst: Identifiable, Hashable, Sendable {
+    static let dropDuration: TimeInterval = 1.15
+    static let grazeDuration: TimeInterval = 1.8
+    static let releaseDuration: TimeInterval = 1.6
+    static let settleDuration: TimeInterval = 2.2
+    static let burstTriggerTime = dropDuration + grazeDuration * 0.92
+    static let burstAnimationDuration: TimeInterval = 0.96
+    static let feedingCycleDuration = dropDuration + grazeDuration + releaseDuration + settleDuration
+    static let interactionLockDuration = feedingCycleDuration + burstAnimationDuration
+
     let id: UUID
     let startedAt: Date
     let xFraction: CGFloat
@@ -18,6 +29,10 @@ struct AquariumFeedBurst: Identifiable, Hashable, Sendable {
         self.id = id
         self.startedAt = startedAt
         self.xFraction = xFraction
+    }
+
+    var endsAt: Date {
+        startedAt.addingTimeInterval(Self.interactionLockDuration)
     }
 }
 
@@ -226,7 +241,7 @@ private struct AquariumInteriorView: View {
 
                     DecorationLayer(decoration: configuration.decoration)
 
-                    if configuration.companion != .none {
+                    if !configuration.resolvedCompanions.isEmpty {
                         companionView(in: size)
                     }
 
@@ -285,6 +300,10 @@ private struct AquariumInteriorView: View {
     }
 
     private func fishLayouts(in size: CGSize) -> [FishLayout] {
+        if petSnapshot.mood == .burst {
+            return []
+        }
+
         let speciesLineup = configuration.resolvedFishSpecies
         let count = speciesLineup.count
         let isCompactFormat = format == .widgetSmall
@@ -321,7 +340,7 @@ private struct AquariumInteriorView: View {
             scales = [0.25, 0.20, 0.19]
         }
 
-        return (0..<count).map { index in
+        var layouts = (0..<count).map { index in
             let species = speciesLineup[index]
             let spriteScale = visualSpriteScale(for: species)
             let motionScale = personality.motionScale * sceneTone.motionScale
@@ -387,9 +406,43 @@ private struct AquariumInteriorView: View {
                 rotation: petSnapshot.isAlive
                 ? Double(-4 + index * 4) + heading * 10 + Double(bob) * 6 * Double(driftScale)
                 : Double(76 - index * 9),
-                isMirrored: petSnapshot.isAlive ? heading > 0 : index % 2 == 0
+                isMirrored: petSnapshot.isAlive ? heading > 0 : index % 2 == 0,
+                isBaby: false
             )
         }
+
+        if let babySpecies = petSnapshot.babySpecies, petSnapshot.isAlive {
+            let spriteScale = visualSpriteScale(for: babySpecies) * 0.58
+            let babyPhase = phase * personality.motionScale * 0.94 + 5.1
+            let babyPosition = clampedFishPosition(
+                CGPoint(
+                    x: size.width * 0.54 + CGFloat(sin(babyPhase)) * size.width * 0.07,
+                    y: size.height * 0.57 + CGFloat(cos(babyPhase * 1.4)) * size.height * 0.03
+                ),
+                species: babySpecies,
+                spriteScale: spriteScale,
+                size: size,
+                waterLevel: waterLevel
+            )
+            let babyWidth = size.width * (isCompactFormat ? 0.13 : (isAppIconFormat ? 0.20 : 0.16)) * formatScale
+
+            layouts.append(
+                FishLayout(
+                    species: babySpecies,
+                    position: babyPosition,
+                    size: CGSize(
+                        width: babyWidth * (0.88 + CGFloat(petSnapshot.fullnessProgress) * 0.06),
+                        height: babyWidth * 0.66
+                    ),
+                    spriteScale: isAppIconFormat ? 2.3 : spriteScale,
+                    rotation: Double(sin(babyPhase * 1.2)) * 8,
+                    isMirrored: cos(babyPhase) > 0,
+                    isBaby: true
+                )
+            )
+        }
+
+        return layouts
     }
 
     private func visualSpriteScale(for species: FishSpecies) -> CGFloat {
@@ -535,38 +588,30 @@ private struct AquariumInteriorView: View {
     private func companionView(in size: CGSize) -> some View {
         let accent = configuration.decoration.accentColors.first ?? configuration.substrate.accentColors.first ?? .orange
         let secondary = configuration.fishPalette.last ?? .white
-        let layout = companionLayout(in: size)
+        let layouts = companionLayouts(in: size)
 
-        Group {
-            switch configuration.companion {
-            case .none:
-                EmptyView()
-            case .snail:
-                SnailSprite(accent: accent)
-                    .frame(width: size.width * 0.13, height: size.width * 0.10)
-            case .shrimp:
-                ShrimpSprite(shell: accent, highlight: secondary)
-                    .frame(width: size.width * 0.15, height: size.width * 0.10)
-            case .crab:
-                CrabSprite(shell: accent, highlight: secondary)
-                    .frame(width: size.width * 0.16, height: size.width * 0.11)
-            case .seaCucumber:
-                SeaCucumberSprite(bodyColor: accent, underside: secondary, highlight: configuration.substrate.accentColors[1])
-                    .frame(width: size.width * 0.22, height: size.width * 0.10)
-            case .nudibranchFlame:
-                NudibranchSprite(variant: .flame)
-                    .frame(width: size.width * 0.23, height: size.width * 0.11)
-            case .nudibranchRibbon:
-                NudibranchSprite(variant: .ribbon)
-                    .frame(width: size.width * 0.22, height: size.width * 0.11)
-            }
+        ForEach(Array(layouts.enumerated()), id: \.offset) { _, layout in
+            CompanionSprite(
+                style: layout.style,
+                accent: accent,
+                secondary: secondary,
+                substrateHighlight: configuration.substrate.accentColors[1]
+            )
+            .frame(width: layout.renderSize.width, height: layout.renderSize.height)
+            .rotationEffect(.degrees(layout.rotation))
+            .scaleEffect(x: layout.isMirrored ? -1 : 1, y: 1)
+            .position(layout.position)
         }
-        .rotationEffect(.degrees(layout.rotation))
-        .scaleEffect(x: layout.isMirrored ? -1 : 1, y: 1)
-        .position(layout.position)
     }
 
-    private func companionLayout(in size: CGSize) -> CompanionLayout {
+    private func companionLayouts(in size: CGSize) -> [CompanionLayout] {
+        let companions = configuration.resolvedCompanions
+        return companions.enumerated().map { index, style in
+            companionLayout(for: style, index: index, count: companions.count, in: size)
+        }
+    }
+
+    private func companionLayout(for style: CompanionStyle, index: Int, count: Int, in size: CGSize) -> CompanionLayout {
         let metrics: (
             baseX: CGFloat,
             baseY: CGFloat,
@@ -577,7 +622,7 @@ private struct AquariumInteriorView: View {
             naturalFacingRight: Bool
         )
 
-        switch configuration.companion {
+        switch style {
         case .none:
             metrics = (0.50, 0.84, 0, 0, 0, 0, true)
         case .snail:
@@ -632,14 +677,17 @@ private struct AquariumInteriorView: View {
             )
         }
 
-        let motionPhase = phase * metrics.speed + metrics.offset
+        let slotOffset = count == 1
+        ? 0
+        : CGFloat(index) - CGFloat(count - 1) * 0.5
+        let motionPhase = phase * metrics.speed + metrics.offset + Double(index) * 0.9
         let horizontalDrift = CGFloat(sin(motionPhase))
         let lift = abs(CGFloat(sin(motionPhase * 1.9))) * size.height * metrics.stepLift
         let movingRight = cos(motionPhase) > 0
         let isMirrored = metrics.naturalFacingRight ? !movingRight : movingRight
         let rotationStrength: CGFloat
 
-        switch configuration.companion {
+        switch style {
         case .shrimp:
             rotationStrength = 4.8
         case .crab:
@@ -651,13 +699,34 @@ private struct AquariumInteriorView: View {
         }
 
         return CompanionLayout(
+            style: style,
             position: CGPoint(
-                x: size.width * metrics.baseX + horizontalDrift * size.width * metrics.range,
+                x: size.width * metrics.baseX + slotOffset * size.width * 0.16 + horizontalDrift * size.width * metrics.range,
                 y: size.height * metrics.baseY - lift
             ),
+            renderSize: companionRenderSize(for: style, in: size),
             isMirrored: isMirrored,
             rotation: Double(horizontalDrift * rotationStrength)
         )
+    }
+
+    private func companionRenderSize(for style: CompanionStyle, in size: CGSize) -> CGSize {
+        switch style {
+        case .none:
+            return .zero
+        case .snail:
+            return CGSize(width: size.width * 0.13, height: size.width * 0.10)
+        case .shrimp:
+            return CGSize(width: size.width * 0.15, height: size.width * 0.10)
+        case .crab:
+            return CGSize(width: size.width * 0.16, height: size.width * 0.11)
+        case .seaCucumber:
+            return CGSize(width: size.width * 0.22, height: size.width * 0.10)
+        case .nudibranchFlame:
+            return CGSize(width: size.width * 0.23, height: size.width * 0.11)
+        case .nudibranchRibbon:
+            return CGSize(width: size.width * 0.22, height: size.width * 0.11)
+        }
     }
 
     @ViewBuilder
@@ -805,10 +874,27 @@ private struct FishLayout {
     let spriteScale: CGFloat
     let rotation: Double
     let isMirrored: Bool
+    let isBaby: Bool
+}
+
+private struct BurstFishVisual {
+    let species: FishSpecies
+    let scenePosition: CGPoint
+    let renderSize: CGSize
+    let rotation: CGFloat
+    let isMirrored: Bool
+}
+
+private struct BurstAnimationState {
+    let burstID: UUID
+    let startedAt: TimeInterval
+    let fishVisuals: [BurstFishVisual]
 }
 
 private struct CompanionLayout {
+    let style: CompanionStyle
     let position: CGPoint
+    let renderSize: CGSize
     let isMirrored: Bool
     let rotation: Double
 }
@@ -1265,108 +1351,136 @@ private struct FishSprite: View {
         let lowerFinHeight = species.bodyHeight * 0.92 * species.finHeightMultiplier
 
         ZStack {
-            TailShape()
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            species.palette[1].opacity(0.42 + vitality * 0.44),
-                            species.palette[2].opacity(0.10 + vitality * 0.12),
-                        ],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .frame(width: tailWidth, height: tailHeight)
-                .offset(x: species.bodyWidth * 0.42)
-                .blur(radius: 0.2)
-
-            Ellipse()
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            species.palette[0].opacity(0.56 + vitality * 0.44),
-                            species.palette[1].opacity(0.52 + vitality * 0.48),
-                            species.palette[2].opacity(0.46 + vitality * 0.54),
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .frame(width: species.bodyWidth, height: species.bodyHeight)
-                .overlay {
-                    Ellipse()
-                        .stroke(Color.white.opacity(0.28), lineWidth: 0.9)
-                }
-                .overlay(alignment: .leading) {
-                    Circle()
-                        .fill(Color.white.opacity(0.95))
-                        .frame(width: 4.4)
-                        .overlay {
-                            Circle()
-                                .fill(Color.black.opacity(0.72))
-                                .frame(width: 2.5)
-                        }
-                        .offset(x: 4)
-                }
-                .offset(x: -4)
-
-            Ellipse()
-                .fill(species.palette[2].opacity(0.26))
-                .frame(width: species.bodyWidth * 0.34, height: upperFinHeight)
-                .rotationEffect(.degrees(-36))
-                .offset(x: -2, y: -species.bodyHeight * 0.48)
-
-            Ellipse()
-                .fill(species.palette[2].opacity(0.22))
-                .frame(width: species.bodyWidth * 0.30, height: lowerFinHeight)
-                .rotationEffect(.degrees(34))
-                .offset(x: -2, y: species.bodyHeight * 0.48)
-
-            if species == .moonKoi || species == .glassGold {
-                Circle()
-                    .fill(species.palette[2].opacity(0.34))
-                    .frame(width: species.bodyWidth * 0.26)
-                    .offset(x: 6, y: -2)
-            }
-
-            if species == .opalAngelfish {
-                Capsule(style: .continuous)
-                    .fill(species.palette[2].opacity(0.48))
-                    .frame(width: 3, height: species.bodyHeight * 1.35)
-                    .offset(x: 6, y: species.bodyHeight * 0.88)
-
-                Capsule(style: .continuous)
-                    .fill(species.palette[2].opacity(0.34))
-                    .frame(width: 2.4, height: species.bodyHeight * 1.15)
-                    .offset(x: -4, y: species.bodyHeight * 0.96)
-            }
-
-            if species == .leopardShark {
-                Triangle()
-                    .fill(species.palette[0].opacity(0.92))
-                    .frame(width: species.bodyWidth * 0.22, height: species.bodyHeight * 0.72)
-                    .rotationEffect(.degrees(-4))
-                    .offset(x: 3, y: -species.bodyHeight * 0.72)
-
-                Ellipse()
-                    .fill(species.palette[1].opacity(0.26))
-                    .frame(width: species.bodyWidth * 0.20, height: species.bodyHeight * 0.46)
-                    .rotationEffect(.degrees(-18))
-                    .offset(x: -1, y: species.bodyHeight * 0.34)
-
-                ForEach(0..<5, id: \.self) { index in
-                    Circle()
-                        .fill(Color.black.opacity(0.30))
-                        .frame(width: index.isMultiple(of: 2) ? 4.5 : 3.4)
-                        .offset(
-                            x: -6 + CGFloat(index) * 6,
-                            y: index.isMultiple(of: 2) ? -2 : 3
+                    TailShape()
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    species.palette[1].opacity(0.42 + vitality * 0.44),
+                                    species.palette[2].opacity(0.10 + vitality * 0.12),
+                                ],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
                         )
-                }
-            }
+                        .frame(width: tailWidth, height: tailHeight)
+                        .offset(x: species.bodyWidth * 0.42)
+                        .blur(radius: 0.2)
+
+                    Ellipse()
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    species.palette[0].opacity(0.56 + vitality * 0.44),
+                                    species.palette[1].opacity(0.52 + vitality * 0.48),
+                                    species.palette[2].opacity(0.46 + vitality * 0.54),
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: species.bodyWidth, height: species.bodyHeight)
+                        .overlay {
+                            Ellipse()
+                                .stroke(Color.white.opacity(0.28), lineWidth: 0.9)
+                        }
+                        .overlay(alignment: .leading) {
+                            Circle()
+                                .fill(Color.white.opacity(0.95))
+                                .frame(width: 4.4)
+                                .overlay {
+                                    Circle()
+                                        .fill(Color.black.opacity(0.72))
+                                        .frame(width: 2.5)
+                                }
+                                .offset(x: 4)
+                        }
+                        .offset(x: -4)
+
+                    Ellipse()
+                        .fill(species.palette[2].opacity(0.26))
+                        .frame(width: species.bodyWidth * 0.34, height: upperFinHeight)
+                        .rotationEffect(.degrees(-36))
+                        .offset(x: -2, y: -species.bodyHeight * 0.48)
+
+                    Ellipse()
+                        .fill(species.palette[2].opacity(0.22))
+                        .frame(width: species.bodyWidth * 0.30, height: lowerFinHeight)
+                        .rotationEffect(.degrees(34))
+                        .offset(x: -2, y: species.bodyHeight * 0.48)
+
+                    if species == .moonKoi || species == .glassGold {
+                        Circle()
+                            .fill(species.palette[2].opacity(0.34))
+                            .frame(width: species.bodyWidth * 0.26)
+                            .offset(x: 6, y: -2)
+                    }
+
+                    if species == .opalAngelfish {
+                        Capsule(style: .continuous)
+                            .fill(species.palette[2].opacity(0.48))
+                            .frame(width: 3, height: species.bodyHeight * 1.35)
+                            .offset(x: 6, y: species.bodyHeight * 0.88)
+
+                        Capsule(style: .continuous)
+                            .fill(species.palette[2].opacity(0.34))
+                            .frame(width: 2.4, height: species.bodyHeight * 1.15)
+                            .offset(x: -4, y: species.bodyHeight * 0.96)
+                    }
+
+                    if species == .leopardShark {
+                        Triangle()
+                            .fill(species.palette[0].opacity(0.92))
+                            .frame(width: species.bodyWidth * 0.22, height: species.bodyHeight * 0.72)
+                            .rotationEffect(.degrees(-4))
+                            .offset(x: 3, y: -species.bodyHeight * 0.72)
+
+                        Ellipse()
+                            .fill(species.palette[1].opacity(0.26))
+                            .frame(width: species.bodyWidth * 0.20, height: species.bodyHeight * 0.46)
+                            .rotationEffect(.degrees(-18))
+                            .offset(x: -1, y: species.bodyHeight * 0.34)
+
+                        ForEach(0..<5, id: \.self) { index in
+                            Circle()
+                                .fill(Color.black.opacity(0.30))
+                                .frame(width: index.isMultiple(of: 2) ? 4.5 : 3.4)
+                                .offset(
+                                    x: -6 + CGFloat(index) * 6,
+                                    y: index.isMultiple(of: 2) ? -2 : 3
+                                )
+                        }
+                    }
         }
         .saturation(isAlive ? 0.58 + vitality * 0.42 : 0.12)
         .scaleEffect(x: isMirrored ? -1 : 1, y: 1)
+    }
+}
+
+private struct CompanionSprite: View {
+    let style: CompanionStyle
+    let accent: Color
+    let secondary: Color
+    let substrateHighlight: Color
+
+    var body: some View {
+        Group {
+            switch style {
+            case .none:
+                EmptyView()
+            case .snail:
+                SnailSprite(accent: accent)
+            case .shrimp:
+                ShrimpSprite(shell: accent, highlight: secondary)
+            case .crab:
+                CrabSprite(shell: accent, highlight: secondary)
+            case .seaCucumber:
+                SeaCucumberSprite(bodyColor: accent, underside: secondary, highlight: substrateHighlight)
+            case .nudibranchFlame:
+                NudibranchSprite(variant: .flame)
+            case .nudibranchRibbon:
+                NudibranchSprite(variant: .ribbon)
+            }
+        }
     }
 }
 
@@ -2708,10 +2822,14 @@ private extension FishPersonality {
 
     func thoughtText(mood: AquariumPetMood, tone: AquariumSceneTone) -> String {
         switch mood {
+        case .burst:
+            return "💥"
         case .critical:
             return self == .greedy ? "🍽️" : "😫"
         case .hungry:
             return self == .shy ? "🥺" : "🍤"
+        case .stuffed:
+            return self == .greedy ? "😵" : "🍽️"
         case .dead:
             return "💤"
         case .decorative, .content:
@@ -2821,6 +2939,7 @@ struct SpriteKitAquariumSceneView: View {
     let tapRipples: [AquariumTapRipple]
     let phaseOffset: Double
     let isPaused: Bool
+    let onFeedBurstConsumed: AquariumFeedBurstConsumedHandler
 
     var body: some View {
         GeometryReader { _ in
@@ -2831,7 +2950,8 @@ struct SpriteKitAquariumSceneView: View {
                 feedBursts: feedBursts,
                 tapRipples: tapRipples,
                 phaseOffset: phaseOffset,
-                isPaused: isPaused
+                isPaused: isPaused,
+                onFeedBurstConsumed: onFeedBurstConsumed
             )
             .padding(format.bodyInset)
             .clipShape(AquariumBodyShape(style: configuration.vesselStyle))
@@ -2848,6 +2968,7 @@ private struct AquariumSpriteRepresentable: UIViewRepresentable {
     let tapRipples: [AquariumTapRipple]
     let phaseOffset: Double
     let isPaused: Bool
+    let onFeedBurstConsumed: AquariumFeedBurstConsumedHandler
 
     func makeCoordinator() -> AquariumSpriteCoordinator {
         AquariumSpriteCoordinator(
@@ -2856,7 +2977,8 @@ private struct AquariumSpriteRepresentable: UIViewRepresentable {
             format: format,
             feedBursts: feedBursts,
             tapRipples: tapRipples,
-            phaseOffset: phaseOffset
+            phaseOffset: phaseOffset,
+            onFeedBurstConsumed: onFeedBurstConsumed
         )
     }
 
@@ -2896,7 +3018,8 @@ private final class AquariumSpriteCoordinator {
         format: AquariumDisplayFormat,
         feedBursts: [AquariumFeedBurst],
         tapRipples: [AquariumTapRipple],
-        phaseOffset: Double
+        phaseOffset: Double,
+        onFeedBurstConsumed: @escaping AquariumFeedBurstConsumedHandler
     ) {
         scene = AquariumSpriteScene(
             profile: profile,
@@ -2904,7 +3027,8 @@ private final class AquariumSpriteCoordinator {
             format: format,
             feedBursts: feedBursts,
             tapRipples: tapRipples,
-            phaseOffset: phaseOffset
+            phaseOffset: phaseOffset,
+            onFeedBurstConsumed: onFeedBurstConsumed
         )
     }
 
@@ -2976,10 +3100,12 @@ private final class AquariumSpriteScene: SKScene {
     private var pelletNodes: [SKSpriteNode] = []
     private var rippleNodes: [AquariumSpriteRippleNode] = []
     private var fishNodes: [SKSpriteNode] = []
-    private var companionNode: SKSpriteNode?
+    private var burstShockwaveNodes: [SKSpriteNode] = []
+    private var companionNodes: [SKSpriteNode] = []
     private var visitorNode: SKSpriteNode?
     private var fishThoughtNodes: [SKSpriteNode] = []
     private var visitorThoughtNode: SKSpriteNode?
+    private var burstFlashNode: SKSpriteNode?
     private var animationElapsed: TimeInterval = 0
     private var lastUpdateTimestamp: TimeInterval?
     private var renderPaused = false
@@ -2987,6 +3113,10 @@ private final class AquariumSpriteScene: SKScene {
     private var hasRenderedInitialFrame = false
     private var feedBurstStartTimes: [UUID: TimeInterval] = [:]
     private var tapRippleStartTimes: [UUID: TimeInterval] = [:]
+    private var consumedFeedBurstIDs: Set<UUID> = []
+    private var activeBurstAnimation: BurstAnimationState?
+    private var lastRenderedFishVisuals: [BurstFishVisual] = []
+    private var onFeedBurstConsumed: AquariumFeedBurstConsumedHandler
 
     init(
         profile: BowlProfile,
@@ -2994,7 +3124,8 @@ private final class AquariumSpriteScene: SKScene {
         format: AquariumDisplayFormat,
         feedBursts: [AquariumFeedBurst],
         tapRipples: [AquariumTapRipple],
-        phaseOffset: Double
+        phaseOffset: Double,
+        onFeedBurstConsumed: @escaping AquariumFeedBurstConsumedHandler
     ) {
         self.profile = profile
         self.configuration = configuration
@@ -3002,6 +3133,7 @@ private final class AquariumSpriteScene: SKScene {
         self.feedBursts = feedBursts
         self.tapRipples = tapRipples
         self.phaseOffset = phaseOffset
+        self.onFeedBurstConsumed = onFeedBurstConsumed
         super.init(size: .zero)
         scaleMode = .resizeFill
         backgroundColor = .clear
@@ -3026,7 +3158,7 @@ private final class AquariumSpriteScene: SKScene {
         self.feedBursts = feedBursts
         self.tapRipples = tapRipples
         self.phaseOffset = phaseOffset
-        syncAnimationAnchors()
+        syncAnimationAnchors(referenceDate: .now)
         rebuildTexturesIfNeeded(scale: effectiveScale)
     }
 
@@ -3063,6 +3195,7 @@ private final class AquariumSpriteScene: SKScene {
         lastUpdateTimestamp = currentTime
 
         renderCurrentFrame(referenceDate: .now)
+        flushConsumedFeedBurstsIfNeeded()
     }
 
     func renderCurrentFrame(referenceDate: Date) {
@@ -3081,15 +3214,32 @@ private final class AquariumSpriteScene: SKScene {
             animationDate: animationDate,
             size: size
         )
+        let fishLayouts = resolver.fishLayouts()
+        let burstProgress = activeBurstAnimation.map { burstAnimationProgress(for: $0) }
 
         syncBubbles(with: resolver.bubbles())
         syncRipples(with: resolver.ripples())
-        syncPellets(with: resolver.foodPellets())
+        syncPellets(with: activeBurstAnimation == nil ? resolver.foodPellets() : [])
         syncVisitor(with: resolver.rareVisitor())
-        syncCompanion(with: resolver.companionLayout(), size: resolver.companionRenderSize())
-        syncFish(with: resolver.fishLayouts(), using: resolver, snapshot: snapshot)
-        syncFishThoughts(with: resolver.fishThoughtBubbles())
-        syncVisitorThought(with: resolver.visitorThoughtBubble())
+        syncCompanions(with: resolver.companionLayouts())
+
+        if let activeBurstAnimation, let burstProgress {
+            syncFishBurstAnimation(
+                activeBurstAnimation,
+                progress: burstProgress,
+                snapshot: snapshot
+            )
+            syncFishThoughts(with: [])
+            syncVisitorThought(with: nil)
+            syncBurstOverlay(progress: burstProgress, fishVisuals: activeBurstAnimation.fishVisuals)
+        } else {
+            syncFish(with: fishLayouts, using: resolver, snapshot: snapshot)
+            lastRenderedFishVisuals = captureFishVisuals(from: fishLayouts, resolver: resolver)
+            syncFishThoughts(with: resolver.fishThoughtBubbles())
+            syncVisitorThought(with: resolver.visitorThoughtBubble())
+            syncBurstOverlay(progress: nil, fishVisuals: [])
+        }
+
         hasRenderedInitialFrame = true
     }
 
@@ -3167,26 +3317,29 @@ private final class AquariumSpriteScene: SKScene {
         }
 
         var nextCompanionTextures: [CompanionStyle: SKTexture] = [:]
-        if configuration.companion != .none {
+        for companion in Set(configuration.resolvedCompanions) {
             let key = AquariumSpriteCompanionTextureKey(
                 configurationHash: configuration.hashValue,
-                companion: configuration.companion,
+                companion: companion,
                 scaleBucket: scaleBucket
             )
             if let texture = Self.cachedTexture(
                 cache: &Self.companionTextureCache,
                 key: key,
                 build: { [self] in
-                    let canvas = AquariumMetalMotionResolver.textureCanvasSize(for: configuration.companion)
+                    let canvas = AquariumMetalMotionResolver.textureCanvasSize(for: companion)
                     return makeTexture(size: canvas, scale: resolvedScale, content: {
                         AquariumMetalCompanionSnapshotView(
-                            configuration: configuration,
+                            companion: companion,
+                            accent: configuration.decoration.accentColors.first ?? configuration.substrate.accentColors.first ?? .orange,
+                            secondary: configuration.fishPalette.last ?? .white,
+                            substrateHighlight: configuration.substrate.accentColors[1],
                             canvasSize: canvas
                         )
                     })
                 }
             ) {
-                nextCompanionTextures[configuration.companion] = texture
+                nextCompanionTextures[companion] = texture
             } else {
                 return
             }
@@ -3219,7 +3372,7 @@ private final class AquariumSpriteScene: SKScene {
         }
 
         var nextThoughtTextures: [String: SKTexture] = [:]
-        let thoughtTexts = ["🍽️", "😫", "🥺", "🍤", "💤", "✨", "⚡️", "🌙", "🫧", "💭", "☁️", "🪽"]
+        let thoughtTexts = ["🍽️", "😫", "🥺", "🍤", "😵", "💥", "💤", "✨", "⚡️", "🌙", "🫧", "💭", "☁️", "🪽"]
         for text in thoughtTexts {
             for pointsToTrailing in [false, true] {
                 let key = "\(text)|\(pointsToTrailing)"
@@ -3268,11 +3421,15 @@ private final class AquariumSpriteScene: SKScene {
         view?.window?.screen.scale ?? view?.contentScaleFactor ?? 3
     }
 
-    private func syncAnimationAnchors() {
+    private func syncAnimationAnchors(referenceDate: Date) {
         let activeFeedIDs = Set(feedBursts.map(\.id))
         feedBurstStartTimes = feedBurstStartTimes.filter { activeFeedIDs.contains($0.key) }
+        consumedFeedBurstIDs = consumedFeedBurstIDs.filter { activeFeedIDs.contains($0) }
+        if let activeBurstAnimation, !activeFeedIDs.contains(activeBurstAnimation.burstID) {
+            self.activeBurstAnimation = nil
+        }
         for burst in feedBursts where feedBurstStartTimes[burst.id] == nil {
-            feedBurstStartTimes[burst.id] = animationElapsed
+            feedBurstStartTimes[burst.id] = animationElapsed + max(0, burst.startedAt.timeIntervalSince(referenceDate))
         }
 
         let activeRippleIDs = Set(tapRipples.map(\.id))
@@ -3280,6 +3437,54 @@ private final class AquariumSpriteScene: SKScene {
         for ripple in tapRipples where tapRippleStartTimes[ripple.id] == nil {
             tapRippleStartTimes[ripple.id] = animationElapsed
         }
+    }
+
+    private func flushConsumedFeedBurstsIfNeeded() {
+        if let activeBurstAnimation {
+            if burstAnimationProgress(for: activeBurstAnimation) >= 1 {
+                self.activeBurstAnimation = nil
+
+                guard consumedFeedBurstIDs.insert(activeBurstAnimation.burstID).inserted else { return }
+                DispatchQueue.main.async { [onFeedBurstConsumed] in
+                    onFeedBurstConsumed(activeBurstAnimation.burstID)
+                }
+            }
+        }
+
+        for burst in feedBursts {
+            guard let startTime = feedBurstStartTimes[burst.id] else { continue }
+            guard !consumedFeedBurstIDs.contains(burst.id) else { continue }
+
+            let burstWouldPop = profile.willBurstOnNextFeed(
+                at: animationEpoch.addingTimeInterval(startTime + AquariumFeedBurst.burstTriggerTime)
+            )
+
+            if burstWouldPop {
+                guard activeBurstAnimation?.burstID != burst.id else { continue }
+                guard animationElapsed - startTime >= AquariumFeedBurst.burstTriggerTime else { continue }
+                startBurstAnimation(for: burst, startTime: startTime)
+                continue
+            }
+
+            guard animationElapsed - startTime >= AquariumFeedBurst.feedingCycleDuration else { continue }
+            guard consumedFeedBurstIDs.insert(burst.id).inserted else { continue }
+
+            DispatchQueue.main.async { [onFeedBurstConsumed] in
+                onFeedBurstConsumed(burst.id)
+            }
+        }
+    }
+
+    private func startBurstAnimation(for burst: AquariumFeedBurst, startTime: TimeInterval) {
+        activeBurstAnimation = BurstAnimationState(
+            burstID: burst.id,
+            startedAt: startTime + AquariumFeedBurst.burstTriggerTime,
+            fishVisuals: lastRenderedFishVisuals
+        )
+        syncPellets(with: [])
+        syncFishThoughts(with: [])
+        syncVisitorThought(with: nil)
+        hasRenderedInitialFrame = true
     }
 
     private func sceneTimedFeedBursts() -> [AquariumFeedBurst] {
@@ -3380,33 +3585,24 @@ private final class AquariumSpriteScene: SKScene {
         node.isHidden = false
     }
 
-    private func syncCompanion(with layout: CompanionLayout, size renderSize: CGSize) {
-        guard configuration.companion != .none,
-              let texture = companionTextures[configuration.companion]
-        else {
-            companionNode?.removeFromParent()
-            companionNode = nil
-            return
-        }
-
-        let node: SKSpriteNode
-        if let existing = companionNode {
-            node = existing
-        } else {
-            node = SKSpriteNode(texture: texture)
+    private func syncCompanions(with layouts: [CompanionLayout]) {
+        syncNodeCount(&companionNodes, desiredCount: layouts.count) {
+            let node = SKSpriteNode(color: .clear, size: .zero)
             node.zPosition = 30
-            addChild(node)
-            companionNode = node
+            return node
         }
 
-        node.texture = texture
-        node.position = scenePoint(from: layout.position)
-        node.size = renderSize
-        node.zRotation = -CGFloat(layout.rotation) * .pi / 180
-        node.xScale = layout.isMirrored ? -1 : 1
-        node.yScale = 1
-        node.alpha = 1
-        node.isHidden = false
+        for (index, layout) in layouts.enumerated() {
+            let node = companionNodes[index]
+            node.texture = companionTextures[layout.style]
+            node.position = scenePoint(from: layout.position)
+            node.size = layout.renderSize
+            node.zRotation = -CGFloat(layout.rotation) * .pi / 180
+            node.xScale = layout.isMirrored ? -1 : 1
+            node.yScale = 1
+            node.alpha = 1
+            node.isHidden = false
+        }
     }
 
     private func syncFish(
@@ -3434,6 +3630,127 @@ private final class AquariumSpriteScene: SKScene {
             node.xScale = layout.isMirrored ? -1 : 1
             node.yScale = 1
             node.isHidden = false
+        }
+    }
+
+    private func captureFishVisuals(
+        from layouts: [FishLayout],
+        resolver: AquariumMetalMotionResolver
+    ) -> [BurstFishVisual] {
+        layouts.map { layout in
+            let frame = resolver.fishRenderRect(for: layout)
+            return BurstFishVisual(
+                species: layout.species,
+                scenePosition: scenePoint(from: CGPoint(x: frame.midX, y: frame.midY)),
+                renderSize: frame.size,
+                rotation: -CGFloat(layout.rotation) * .pi / 180,
+                isMirrored: layout.isMirrored
+            )
+        }
+    }
+
+    private func burstAnimationProgress(for state: BurstAnimationState) -> CGFloat {
+        CGFloat(min(max((animationElapsed - state.startedAt) / AquariumFeedBurst.burstAnimationDuration, 0), 1))
+    }
+
+    private func smoothStep(from lower: CGFloat, to upper: CGFloat, value: CGFloat) -> CGFloat {
+        guard upper > lower else { return 0 }
+        let t = min(max((value - lower) / (upper - lower), 0), 1)
+        return t * t * (3 - 2 * t)
+    }
+
+    private func syncFishBurstAnimation(
+        _ state: BurstAnimationState,
+        progress: CGFloat,
+        snapshot: AquariumPetSnapshot
+    ) {
+        syncNodeCount(&fishNodes, desiredCount: state.fishVisuals.count) {
+            let node = SKSpriteNode(color: .clear, size: .zero)
+            node.zPosition = 32
+            return node
+        }
+
+        let inflatePhase = smoothStep(from: 0.0, to: 0.22, value: progress)
+        let vanishPhase = smoothStep(from: 0.14, to: 0.96, value: progress)
+
+        for (index, visual) in state.fishVisuals.enumerated() {
+            let node = fishNodes[index]
+            node.texture = fishTextures[visual.species]
+            node.position = visual.scenePosition
+            node.zRotation = visual.rotation
+            node.xScale = visual.isMirrored ? -1 : 1
+
+            let widthScale = 1 + inflatePhase * 0.16 + vanishPhase * 0.44
+            let heightScale = 1 + inflatePhase * 0.22 + vanishPhase * 0.30
+            node.size = CGSize(
+                width: visual.renderSize.width * widthScale,
+                height: visual.renderSize.height * heightScale
+            )
+            node.alpha = max(0, 1 - vanishPhase * 1.18)
+            node.color = UIColor(
+                red: 1.0,
+                green: 0.96 - CGFloat(progress) * 0.18,
+                blue: 0.92 - CGFloat(progress) * 0.34,
+                alpha: 1
+            )
+            node.colorBlendFactor = 0.08 + vanishPhase * 0.54
+            node.yScale = 1
+            node.isHidden = node.alpha <= 0.01
+        }
+
+        while fishNodes.count > state.fishVisuals.count {
+            let node = fishNodes.removeLast()
+            node.removeFromParent()
+        }
+    }
+
+    private func syncBurstOverlay(progress: CGFloat?, fishVisuals: [BurstFishVisual]) {
+        let flashNode: SKSpriteNode
+        if let existing = burstFlashNode {
+            flashNode = existing
+        } else {
+            let node = SKSpriteNode(color: .white, size: .zero)
+            node.zPosition = 30
+            node.isUserInteractionEnabled = false
+            addChild(node)
+            burstFlashNode = node
+            flashNode = node
+        }
+
+        guard let progress else {
+            flashNode.alpha = 0
+            flashNode.isHidden = true
+            syncNodeCount(&burstShockwaveNodes, desiredCount: 0) {
+                let node = SKSpriteNode(texture: rippleTexture)
+                node.zPosition = 34
+                return node
+            }
+            return
+        }
+
+        flashNode.isHidden = false
+        flashNode.position = CGPoint(x: size.width * 0.5, y: size.height * 0.5)
+        flashNode.size = size
+        flashNode.color = UIColor(red: 1.0, green: 0.91, blue: 0.86, alpha: 1)
+        flashNode.alpha = max(0, 0.24 * (1 - progress) + 0.10 * smoothStep(from: 0.18, to: 1, value: progress))
+
+        syncNodeCount(&burstShockwaveNodes, desiredCount: fishVisuals.count) {
+            let node = SKSpriteNode(texture: rippleTexture)
+            node.zPosition = 34
+            return node
+        }
+
+        let ringProgress = smoothStep(from: 0.06, to: 0.92, value: progress)
+        for (index, visual) in fishVisuals.enumerated() {
+            let node = burstShockwaveNodes[index]
+            let ringSize = max(visual.renderSize.width, visual.renderSize.height) * (0.72 + ringProgress * 1.65)
+            node.texture = rippleTexture
+            node.position = visual.scenePosition
+            node.size = CGSize(width: ringSize, height: ringSize)
+            node.alpha = max(0, 0.92 * (1 - ringProgress))
+            node.color = UIColor(red: 1.0, green: 0.96, blue: 0.98, alpha: 1)
+            node.colorBlendFactor = 0.52
+            node.isHidden = node.alpha <= 0.01
         }
     }
 
@@ -3982,19 +4299,17 @@ private final class AquariumMetalCoordinator: NSObject, MTKViewDelegate {
             )
         }
 
-        if configuration.companion != .none,
-           let texture = companionTextures[configuration.companion] {
-            let layout = resolver.companionLayout()
-            let size = resolver.companionRenderSize()
+        for layout in resolver.companionLayouts() {
+            guard let texture = companionTextures[layout.style] else { continue }
             drawQuad(
                 encoder: encoder,
                 texture: texture,
                 maskTexture: whiteMaskTexture,
                 frame: CGRect(
-                    x: layout.position.x - size.width * 0.5,
-                    y: layout.position.y - size.height * 0.5,
-                    width: size.width,
-                    height: size.height
+                    x: layout.position.x - layout.renderSize.width * 0.5,
+                    y: layout.position.y - layout.renderSize.height * 0.5,
+                    width: layout.renderSize.width,
+                    height: layout.renderSize.height
                 ),
                 rotation: CGFloat(layout.rotation) * .pi / 180,
                 mirrored: layout.isMirrored
@@ -4135,15 +4450,18 @@ private final class AquariumMetalCoordinator: NSObject, MTKViewDelegate {
         }
 
         var nextCompanionTextures: [CompanionStyle: MTLTexture] = [:]
-        if configuration.companion != .none {
-            let canvas = AquariumMetalMotionResolver.textureCanvasSize(for: configuration.companion)
-            nextCompanionTextures[configuration.companion] = makeTexture(size: canvas, scale: scale) {
+        for companion in Set(configuration.resolvedCompanions) {
+            let canvas = AquariumMetalMotionResolver.textureCanvasSize(for: companion)
+            nextCompanionTextures[companion] = makeTexture(size: canvas, scale: scale) {
                 AquariumMetalCompanionSnapshotView(
-                    configuration: configuration,
+                    companion: companion,
+                    accent: configuration.decoration.accentColors.first ?? configuration.substrate.accentColors.first ?? .orange,
+                    secondary: configuration.fishPalette.last ?? .white,
+                    substrateHighlight: configuration.substrate.accentColors[1],
                     canvasSize: canvas
                 )
             }
-            guard nextCompanionTextures[configuration.companion] != nil else {
+            guard nextCompanionTextures[companion] != nil else {
                 return
             }
         }
@@ -4408,11 +4726,11 @@ private struct AquariumMetalMotionResolver {
     func foodPellets() -> [AquariumFoodPellet] {
         feedBursts.flatMap { burst in
             let elapsed = motionDate.timeIntervalSince(burst.startedAt)
-            let dropDuration: TimeInterval = 1.15
-            let grazeDuration: TimeInterval = 1.8
-            let releaseDuration: TimeInterval = 1.6
-            let settleDuration: TimeInterval = 2.2
-            let totalDuration = dropDuration + grazeDuration + releaseDuration + settleDuration
+            let dropDuration = AquariumFeedBurst.dropDuration
+            let grazeDuration = AquariumFeedBurst.grazeDuration
+            let releaseDuration = AquariumFeedBurst.releaseDuration
+            let settleDuration = AquariumFeedBurst.settleDuration
+            let totalDuration = AquariumFeedBurst.feedingCycleDuration
             guard elapsed >= 0, elapsed <= totalDuration else { return [AquariumFoodPellet]() }
 
             let dropProgress = min(max(elapsed / dropDuration, 0), 1)
@@ -4496,6 +4814,10 @@ private struct AquariumMetalMotionResolver {
     }
 
     func fishLayouts() -> [FishLayout] {
+        if petSnapshot.mood == .burst {
+            return []
+        }
+
         let speciesLineup = configuration.resolvedFishSpecies
         let count = speciesLineup.count
         let isCompactFormat = format == .widgetSmall
@@ -4530,7 +4852,7 @@ private struct AquariumMetalMotionResolver {
             scales = [0.25, 0.20, 0.19]
         }
 
-        return (0..<count).map { index in
+        var layouts = (0..<count).map { index in
             let species = speciesLineup[index]
             let spriteScale = visualSpriteScale(for: species)
             let motionScale = personality.motionScale * tone.motionScale
@@ -4587,9 +4909,41 @@ private struct AquariumMetalMotionResolver {
                 rotation: petSnapshot.isAlive
                 ? Double(-4 + index * 4) + heading * 10 + Double(bob) * 6 * Double(driftScale)
                 : Double(76 - index * 9),
-                isMirrored: petSnapshot.isAlive ? heading > 0 : index % 2 == 0
+                isMirrored: petSnapshot.isAlive ? heading > 0 : index % 2 == 0,
+                isBaby: false
             )
         }
+
+        if let babySpecies = petSnapshot.babySpecies, petSnapshot.isAlive {
+            let spriteScale = visualSpriteScale(for: babySpecies) * 0.58
+            let babyPhase = phase * personality.motionScale * 0.94 + 5.1
+            let babyPosition = clampedFishPosition(
+                CGPoint(
+                    x: size.width * 0.54 + CGFloat(sin(babyPhase)) * size.width * 0.07,
+                    y: size.height * 0.57 + CGFloat(cos(babyPhase * 1.4)) * size.height * 0.03
+                ),
+                species: babySpecies,
+                spriteScale: spriteScale
+            )
+            let babyWidth = size.width * (isCompactFormat ? 0.13 : (isAppIconFormat ? 0.20 : 0.16)) * formatScale
+
+            layouts.append(
+                FishLayout(
+                    species: babySpecies,
+                    position: babyPosition,
+                    size: CGSize(
+                        width: babyWidth * (0.88 + CGFloat(petSnapshot.fullnessProgress) * 0.06),
+                        height: babyWidth * 0.66
+                    ),
+                    spriteScale: isAppIconFormat ? 2.3 : spriteScale,
+                    rotation: Double(sin(babyPhase * 1.2)) * 8,
+                    isMirrored: cos(babyPhase) > 0,
+                    isBaby: true
+                )
+            )
+        }
+
+        return layouts
     }
 
     func fishRenderRect(for layout: FishLayout) -> CGRect {
@@ -4602,7 +4956,14 @@ private struct AquariumMetalMotionResolver {
         )
     }
 
-    func companionLayout() -> CompanionLayout {
+    func companionLayouts() -> [CompanionLayout] {
+        let companions = configuration.resolvedCompanions
+        return companions.enumerated().map { index, style in
+            companionLayout(for: style, index: index, count: companions.count)
+        }
+    }
+
+    private func companionLayout(for style: CompanionStyle, index: Int, count: Int) -> CompanionLayout {
         let metrics: (
             baseX: CGFloat,
             baseY: CGFloat,
@@ -4613,7 +4974,7 @@ private struct AquariumMetalMotionResolver {
             naturalFacingRight: Bool
         )
 
-        switch configuration.companion {
+        switch style {
         case .none:
             metrics = (0.50, 0.84, 0, 0, 0, 0, true)
         case .snail:
@@ -4668,14 +5029,17 @@ private struct AquariumMetalMotionResolver {
             )
         }
 
-        let motionPhase = phase * metrics.speed + metrics.offset
+        let slotOffset = count == 1
+        ? 0
+        : CGFloat(index) - CGFloat(count - 1) * 0.5
+        let motionPhase = phase * metrics.speed + metrics.offset + Double(index) * 0.9
         let horizontalDrift = CGFloat(sin(motionPhase))
         let lift = abs(CGFloat(sin(motionPhase * 1.9))) * size.height * metrics.stepLift
         let movingRight = cos(motionPhase) > 0
         let isMirrored = metrics.naturalFacingRight ? !movingRight : movingRight
         let rotationStrength: CGFloat
 
-        switch configuration.companion {
+        switch style {
         case .shrimp:
             rotationStrength = 4.8
         case .crab:
@@ -4687,17 +5051,19 @@ private struct AquariumMetalMotionResolver {
         }
 
         return CompanionLayout(
+            style: style,
             position: CGPoint(
-                x: size.width * metrics.baseX + horizontalDrift * size.width * metrics.range,
+                x: size.width * metrics.baseX + slotOffset * size.width * 0.16 + horizontalDrift * size.width * metrics.range,
                 y: size.height * metrics.baseY - lift
             ),
+            renderSize: companionRenderSize(for: style),
             isMirrored: isMirrored,
             rotation: Double(horizontalDrift * rotationStrength)
         )
     }
 
-    func companionRenderSize() -> CGSize {
-        switch configuration.companion {
+    func companionRenderSize(for style: CompanionStyle) -> CGSize {
+        switch style {
         case .none:
             return .zero
         case .snail:
@@ -5190,37 +5556,20 @@ private struct AquariumMetalStaticInteriorView: View {
 }
 
 private struct AquariumMetalCompanionSnapshotView: View {
-    let configuration: AquariumConfiguration
+    let companion: CompanionStyle
+    let accent: Color
+    let secondary: Color
+    let substrateHighlight: Color
     let canvasSize: CGSize
 
     var body: some View {
-        let accent = configuration.decoration.accentColors.first ?? configuration.substrate.accentColors.first ?? .orange
-        let secondary = configuration.fishPalette.last ?? .white
-
-        Group {
-            switch configuration.companion {
-            case .none:
-                EmptyView()
-            case .snail:
-                SnailSprite(accent: accent)
-                    .frame(width: canvasSize.width, height: canvasSize.height)
-            case .shrimp:
-                ShrimpSprite(shell: accent, highlight: secondary)
-                    .frame(width: canvasSize.width, height: canvasSize.height)
-            case .crab:
-                CrabSprite(shell: accent, highlight: secondary)
-                    .frame(width: canvasSize.width, height: canvasSize.height)
-            case .seaCucumber:
-                SeaCucumberSprite(bodyColor: accent, underside: secondary, highlight: configuration.substrate.accentColors[1])
-                    .frame(width: canvasSize.width, height: canvasSize.height)
-            case .nudibranchFlame:
-                NudibranchSprite(variant: .flame)
-                    .frame(width: canvasSize.width, height: canvasSize.height)
-            case .nudibranchRibbon:
-                NudibranchSprite(variant: .ribbon)
-                    .frame(width: canvasSize.width, height: canvasSize.height)
-            }
-        }
+        CompanionSprite(
+            style: companion,
+            accent: accent,
+            secondary: secondary,
+            substrateHighlight: substrateHighlight
+        )
+        .frame(width: canvasSize.width, height: canvasSize.height)
     }
 }
 

@@ -141,7 +141,7 @@ private struct FishbowlWidgetEntryView: View {
                 fishCount: entry.profile.configuration.fishCount,
                 additionalFishSpecies: entry.profile.configuration.additionalFishSpecies,
                 personality: entry.profile.configuration.personality,
-                companion: entry.profile.configuration.companion,
+                companions: entry.profile.configuration.resolvedCompanions,
                 substrate: entry.profile.configuration.substrate,
                 decoration: entry.profile.configuration.decoration,
                 featurePiece: entry.profile.configuration.featurePiece
@@ -153,7 +153,7 @@ private struct FishbowlWidgetEntryView: View {
                 fishCount: entry.profile.configuration.fishCount,
                 additionalFishSpecies: entry.profile.configuration.additionalFishSpecies,
                 personality: entry.profile.configuration.personality,
-                companion: entry.profile.configuration.companion,
+                companions: entry.profile.configuration.resolvedCompanions,
                 substrate: entry.profile.configuration.substrate,
                 decoration: entry.profile.configuration.decoration,
                 featurePiece: entry.profile.configuration.featurePiece

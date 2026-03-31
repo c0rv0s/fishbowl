@@ -32,9 +32,11 @@ enum AquariumMode: String, CaseIterable, Codable, Hashable, Identifiable, Sendab
 enum AquariumPetMood: String, Codable, Hashable, Sendable {
     case decorative
     case content
+    case stuffed
     case hungry
     case critical
     case dead
+    case burst
 
     var title: String {
         switch self {
@@ -42,12 +44,16 @@ enum AquariumPetMood: String, Codable, Hashable, Sendable {
             return "Decorative"
         case .content:
             return "Happy"
+        case .stuffed:
+            return "Stuffed"
         case .hungry:
             return "Hungry"
         case .critical:
             return "Very Hungry"
         case .dead:
             return "Gone"
+        case .burst:
+            return "Popped"
         }
     }
 }
@@ -56,17 +62,30 @@ struct AquariumPetSnapshot: Hashable, Sendable {
     let date: Date
     let mood: AquariumPetMood
     let hungerProgress: Double
+    let fullnessProgress: Double
     let vitality: Double
     let isAlive: Bool
+    let babySpecies: FishSpecies?
 
     static func decorative(at date: Date) -> AquariumPetSnapshot {
         AquariumPetSnapshot(
             date: date,
             mood: .decorative,
             hungerProgress: 0,
+            fullnessProgress: 0,
             vitality: 1,
-            isAlive: true
+            isAlive: true,
+            babySpecies: nil
         )
+    }
+
+    private var visibleFullness: CGFloat {
+        let fullness = CGFloat(fullnessProgress)
+        if !isAlive {
+            return fullness
+        }
+
+        return mood == .stuffed ? max(fullness, 0.56) : fullness
     }
 
     var bodyScaleX: CGFloat {
@@ -74,7 +93,7 @@ struct AquariumPetSnapshot: Hashable, Sendable {
             return 0.86
         }
 
-        return 0.88 + CGFloat(vitality) * 0.12
+        return 0.88 + CGFloat(vitality) * 0.12 + visibleFullness * 0.24
     }
 
     var bodyScaleY: CGFloat {
@@ -82,7 +101,7 @@ struct AquariumPetSnapshot: Hashable, Sendable {
             return 0.64
         }
 
-        return 0.72 + CGFloat(vitality) * 0.28
+        return 0.72 + CGFloat(vitality) * 0.28 + visibleFullness * 0.34
     }
 
     var colorStrength: Double {
@@ -119,12 +138,16 @@ struct AquariumPetSnapshot: Hashable, Sendable {
             return "A saved bowl for the widget."
         case .content:
             return "Fed and looking good."
+        case .stuffed:
+            return "They are round and happily digesting."
         case .hungry:
             return "Ready for a little food."
         case .critical:
             return "Needs food soon."
         case .dead:
             return "This bowl needs a fresh start."
+        case .burst:
+            return "You fed them too much. This tank needs a fresh start."
         }
     }
 
@@ -134,12 +157,16 @@ struct AquariumPetSnapshot: Hashable, Sendable {
             return "Switch this bowl to Pet mode if you want to care for it."
         case .content:
             return "Tap the tank to drop food in."
+        case .stuffed:
+            return "Let them finish what is already in the tank."
         case .hungry:
             return "Tap the tank to feed your fish."
         case .critical:
             return "Open the tank and feed it now."
         case .dead:
             return "Start a new bowl to bring it back."
+        case .burst:
+            return "Delete this tank and make a fresh one."
         }
     }
 }
@@ -148,29 +175,87 @@ struct AquariumPetState: Hashable, Codable, Sendable {
     static let hungryAfter: TimeInterval = 12 * 60 * 60
     static let criticalAfter: TimeInterval = 24 * 60 * 60
     static let starvationAfter: TimeInterval = 36 * 60 * 60
+    static let overfeedWindow: TimeInterval = 8 * 60
+    static let stuffedAfter = 3
+    static let burstAfter = 7
+    static let babyAfterFeedCount = 4
+    static let babyAfterAge: TimeInterval = 18 * 60 * 60
 
     var startedAt: Date
     var lastFedAt: Date
     var deathDate: Date?
+    var burstDate: Date?
     var feedCount: Int
+    var recentFeedDates: [Date]
+
+    enum CodingKeys: String, CodingKey {
+        case startedAt
+        case lastFedAt
+        case deathDate
+        case burstDate
+        case feedCount
+        case recentFeedDates
+    }
 
     static func fresh(at date: Date = .now) -> AquariumPetState {
         AquariumPetState(
             startedAt: date,
             lastFedAt: date,
             deathDate: nil,
-            feedCount: 0
+            burstDate: nil,
+            feedCount: 0,
+            recentFeedDates: []
         )
     }
 
-    func snapshot(at date: Date) -> AquariumPetSnapshot {
+    init(
+        startedAt: Date,
+        lastFedAt: Date,
+        deathDate: Date?,
+        burstDate: Date?,
+        feedCount: Int,
+        recentFeedDates: [Date]
+    ) {
+        self.startedAt = startedAt
+        self.lastFedAt = lastFedAt
+        self.deathDate = deathDate
+        self.burstDate = burstDate
+        self.feedCount = feedCount
+        self.recentFeedDates = recentFeedDates
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        startedAt = try container.decode(Date.self, forKey: .startedAt)
+        lastFedAt = try container.decode(Date.self, forKey: .lastFedAt)
+        deathDate = try container.decodeIfPresent(Date.self, forKey: .deathDate)
+        burstDate = try container.decodeIfPresent(Date.self, forKey: .burstDate)
+        feedCount = try container.decodeIfPresent(Int.self, forKey: .feedCount) ?? 0
+        recentFeedDates = try container.decodeIfPresent([Date].self, forKey: .recentFeedDates) ?? []
+    }
+
+    func snapshot(at date: Date, configuration: AquariumConfiguration) -> AquariumPetSnapshot {
+        if let burstDate, date >= burstDate {
+            return AquariumPetSnapshot(
+                date: date,
+                mood: .burst,
+                hungerProgress: 1,
+                fullnessProgress: 1,
+                vitality: 0,
+                isAlive: false,
+                babySpecies: nil
+            )
+        }
+
         if let deathDate, date >= deathDate {
             return AquariumPetSnapshot(
                 date: date,
                 mood: .dead,
                 hungerProgress: 1,
+                fullnessProgress: 0,
                 vitality: 0,
-                isAlive: false
+                isAlive: false,
+                babySpecies: nil
             )
         }
 
@@ -180,41 +265,78 @@ struct AquariumPetState: Hashable, Codable, Sendable {
                 date: date,
                 mood: .dead,
                 hungerProgress: 1,
+                fullnessProgress: 0,
                 vitality: 0,
-                isAlive: false
+                isAlive: false,
+                babySpecies: nil
             )
         }
 
+        let recentFeeds = recentFeedDates.filter { date.timeIntervalSince($0) <= Self.overfeedWindow }
         let hungerProgress = min(elapsed / Self.starvationAfter, 1)
+        let fullnessProgress = min(
+            Double(max(recentFeeds.count - 1, 0)) / Double(max(Self.burstAfter - 1, 1)),
+            1
+        )
         let vitality = max(0.18, 1 - hungerProgress * 0.92)
         let mood: AquariumPetMood
 
-        switch elapsed {
-        case ..<Self.hungryAfter:
-            mood = .content
-        case ..<Self.criticalAfter:
-            mood = .hungry
-        default:
-            mood = .critical
+        if recentFeeds.count >= Self.stuffedAfter {
+            mood = .stuffed
+        } else {
+            switch elapsed {
+            case ..<Self.hungryAfter:
+                mood = .content
+            case ..<Self.criticalAfter:
+                mood = .hungry
+            default:
+                mood = .critical
+            }
         }
 
         return AquariumPetSnapshot(
             date: date,
             mood: mood,
             hungerProgress: hungerProgress,
+            fullnessProgress: fullnessProgress,
             vitality: vitality,
-            isAlive: true
+            isAlive: true,
+            babySpecies: babySpecies(for: configuration, at: date)
         )
     }
 
     mutating func feed(at date: Date = .now) {
         lastFedAt = date
         deathDate = nil
+        recentFeedDates = recentFeedDates.filter { date.timeIntervalSince($0) <= Self.overfeedWindow }
+        recentFeedDates.append(date)
         feedCount += 1
+        if recentFeedDates.count >= Self.burstAfter {
+            burstDate = date
+            deathDate = date
+        }
+    }
+
+    func wouldBurstOnNextFeed(at date: Date = .now) -> Bool {
+        guard burstDate == nil else { return true }
+        if let deathDate, date >= deathDate {
+            return false
+        }
+
+        let recentFeeds = recentFeedDates.filter { date.timeIntervalSince($0) <= Self.overfeedWindow }
+        return recentFeeds.count + 1 >= Self.burstAfter
     }
 
     mutating func reset(at date: Date = .now) {
         self = .fresh(at: date)
+    }
+
+    private func babySpecies(for configuration: AquariumConfiguration, at date: Date) -> FishSpecies? {
+        let lineup = configuration.resolvedFishSpecies
+        guard lineup.count >= 2, Set(lineup).count == 1 else { return nil }
+        guard date.timeIntervalSince(startedAt) >= Self.babyAfterAge else { return nil }
+        guard feedCount >= Self.babyAfterFeedCount else { return nil }
+        return lineup.first
     }
 }
 
@@ -272,7 +394,7 @@ struct BowlProfile: Identifiable, Hashable, Codable, Sendable {
         case .decorative:
             return .decorative(at: date)
         case .pet:
-            return petState.snapshot(at: date)
+            return petState.snapshot(at: date, configuration: configuration)
         }
     }
 
@@ -294,6 +416,12 @@ struct BowlProfile: Identifiable, Hashable, Codable, Sendable {
         guard petSnapshot(at: date).isAlive else { return }
         petState.feed(at: date)
         touch(at: date)
+    }
+
+    func willBurstOnNextFeed(at date: Date = .now) -> Bool {
+        guard mode == .pet else { return false }
+        guard petSnapshot(at: date).isAlive else { return false }
+        return petState.wouldBurstOnNextFeed(at: date)
     }
 
     mutating func resetPet(at date: Date = .now) {
@@ -383,7 +511,7 @@ enum BowlRepository {
         return profiles.first ?? defaultProfiles().first ?? BowlProfile(
             name: "Blue Bowl",
             configuration: .hero,
-            mode: .decorative
+            mode: .pet
         )
     }
 
@@ -619,7 +747,7 @@ final class BowlStudio: ObservableObject {
         return BowlProfile(
             name: generatedName(),
             configuration: configuration,
-            mode: .decorative,
+            mode: .pet,
             petState: .fresh()
         )
     }
