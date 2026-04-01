@@ -2982,6 +2982,7 @@ struct SpriteKitAquariumSceneView: View {
     }
 }
 
+@MainActor
 private struct AquariumSpriteRepresentable: UIViewRepresentable {
     let profile: BowlProfile
     let configuration: AquariumConfiguration
@@ -3031,6 +3032,7 @@ private struct AquariumSpriteRepresentable: UIViewRepresentable {
     }
 }
 
+@MainActor
 private final class AquariumSpriteCoordinator {
     let scene: AquariumSpriteScene
 

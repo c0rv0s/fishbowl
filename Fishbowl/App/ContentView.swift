@@ -1,3 +1,4 @@
+import AVFoundation
 import StoreKit
 import SwiftUI
 import UIKit
@@ -21,6 +22,8 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             GeometryReader { geometry in
+                let pageHeight = geometry.size.height + geometry.safeAreaInsets.top + geometry.safeAreaInsets.bottom
+
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(spacing: 0) {
                         ForEach(studio.profiles) { profile in
@@ -41,7 +44,7 @@ struct ContentView: View {
                                     deletingProfile = profile
                                 }
                             )
-                            .frame(width: geometry.size.width, height: geometry.size.height)
+                            .frame(width: geometry.size.width, height: pageHeight)
                             .id(TankPageID.profile(profile.id))
                         }
 
@@ -49,11 +52,15 @@ struct ContentView: View {
                             AddTankPage(
                                 slotNumber: studio.profiles.count + 1,
                                 tankLimit: premiumStore.tankLimit,
-                                safeAreaInsets: geometry.safeAreaInsets
+                                safeAreaInsets: geometry.safeAreaInsets,
+                                premiumStore: premiumStore
                             ) {
                                 composerDraft = studio.makeDraftProfile()
+                            } onGenerated: { profile in
+                                studio.addProfile(profile)
+                                currentPageID = .profile(profile.id)
                             }
-                            .frame(width: geometry.size.width, height: geometry.size.height)
+                            .frame(width: geometry.size.width, height: pageHeight)
                             .id(TankPageID.addSlot(studio.profiles.count + 1))
                         } else if !premiumStore.isPremiumUnlocked {
                             PremiumUpsellPage(
@@ -63,12 +70,13 @@ struct ContentView: View {
                                     isPremiumSheetPresented = true
                                 }
                             )
-                            .frame(width: geometry.size.width, height: geometry.size.height)
+                            .frame(width: geometry.size.width, height: pageHeight)
                             .id(TankPageID.premiumUpsell)
                         }
                     }
                     .scrollTargetLayout()
                 }
+                .ignoresSafeArea()
                 .scrollTargetBehavior(.paging)
                 .scrollClipDisabled()
                 .scrollPosition(id: $currentPageID)
@@ -192,16 +200,13 @@ private struct TankHomePage: View {
     let onDelete: () -> Void
     @State private var shareImage: UIImage?
 
-    private var layoutScale: CGFloat {
-        min(max(UIScreen.main.bounds.width / 390, 1.0), 1.12)
-    }
-
     private var snapshot: AquariumPetSnapshot {
         profile.petSnapshot(at: .now)
     }
 
     var body: some View {
         GeometryReader { geometry in
+            let layoutScale = min(max(geometry.size.width / 390, 1.0), 1.12)
             let horizontalPadding = 24 * layoutScale
             let tankSize = max(0, geometry.size.width - horizontalPadding * 2)
             let headerTop = max(22, safeAreaInsets.top + 10)
@@ -337,62 +342,1527 @@ private struct AddTankPage: View {
     let slotNumber: Int
     let tankLimit: Int
     let safeAreaInsets: EdgeInsets
+    @ObservedObject var premiumStore: PremiumStore
     let onCreate: () -> Void
+    let onGenerated: (BowlProfile) -> Void
+
+    @StateObject private var recorder = HumBowlRecorder()
+    @State private var stage: HumCreationStage = .idle
+    @State private var holdStartedAt: Date?
+    @State private var recordingStartedAt: Date?
+    @State private var isTouchActive = false
+    @State private var entryProgress: CGFloat = 0
+    @State private var recordingProgress: CGFloat = 0
+    @State private var holdMilestone = 0
+    @State private var generatedDraft: HumGeneratedBowl?
+    @State private var isPremiumSheetPresented = false
+    @State private var analyzeTask: Task<Void, Never>?
+    @State private var statusMessage: String?
+
+    private let entryDuration: TimeInterval = 0.9
+    private let maxRecordingDuration: TimeInterval = 8
+    private let analysisDurationNanoseconds: UInt64 = 5_000_000_000
+    private let humCreationTicker = Timer.publish(every: 1 / 30, on: .main, in: .common).autoconnect()
+    private let tankCornerRadius: CGFloat = 34
+    private let tankInset: CGFloat = 12
 
     var body: some View {
+        GeometryReader { geometry in
+            let tankSize = CGSize(
+                width: max(0, geometry.size.width - tankInset * 2),
+                height: max(0, geometry.size.height - tankInset * 2)
+            )
+            let micDiameter = min(max(tankSize.width * 0.50, 184), 224)
+            let micCenterY = min(
+                max(tankSize.height * 0.54, safeAreaInsets.top + 220),
+                tankSize.height - safeAreaInsets.bottom - 188
+            )
+            let accentConfiguration = generatedDraft?.profile.configuration ?? .appIcon
+
+            ZStack {
+                Color(red: 0.01, green: 0.12, blue: 0.22)
+                    .ignoresSafeArea()
+
+                ZStack {
+                    fullBleedBackdrop(
+                        configuration: accentConfiguration,
+                        size: tankSize
+                    )
+
+                    if stage == .preview, let generatedDraft {
+                        previewLayer(for: generatedDraft, in: tankSize)
+                            .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                    } else {
+                        idleAndCaptureLayer(
+                            in: tankSize,
+                            micDiameter: micDiameter,
+                            micCenterY: micCenterY
+                        )
+                    }
+
+                    if stage != .preview {
+                        HumMicButton(
+                            stage: stage,
+                            fillProgress: micFillProgress,
+                            recordingProgress: recordingProgress,
+                            waveformLevels: recorder.waveformLevels
+                        )
+                        .frame(width: micDiameter, height: micDiameter)
+                        .position(x: tankSize.width * 0.5, y: micCenterY)
+                        .allowsHitTesting(false)
+                        .transition(.opacity)
+                    }
+
+                    if stage == .analyzing {
+                        HumAnalysisView()
+                            .frame(width: min(micDiameter * 0.88, 170), height: min(micDiameter * 0.72, 110))
+                            .position(x: tankSize.width * 0.5, y: micCenterY)
+                            .allowsHitTesting(false)
+                            .transition(.opacity)
+                    }
+
+                    Color.clear
+                        .frame(width: micDiameter + 40, height: micDiameter + 40)
+                        .contentShape(Circle())
+                        .position(x: tankSize.width * 0.5, y: micCenterY)
+                        .highPriorityGesture(micHoldGesture)
+                        .allowsHitTesting(stage != .preview && stage != .analyzing)
+
+                    if stage != .idle {
+                        VStack {
+                            HStack {
+                                Spacer()
+
+                                IconGlassButton(systemImage: "xmark") {
+                                    resetCreationFlow(clearStatus: false)
+                                }
+                            }
+                            .padding(.top, max(18, safeAreaInsets.top + 6))
+                            .padding(.horizontal, 22)
+
+                            Spacer()
+                        }
+                    }
+                }
+                .frame(width: tankSize.width, height: tankSize.height)
+                .clipShape(RoundedRectangle(cornerRadius: tankCornerRadius, style: .continuous))
+                .overlay {
+                    HumTankChrome(cornerRadius: tankCornerRadius)
+                }
+                .position(x: geometry.size.width * 0.5, y: geometry.size.height * 0.5)
+            }
+            .ignoresSafeArea()
+            .sheet(isPresented: $isPremiumSheetPresented) {
+                PremiumUnlockSheet(store: premiumStore)
+            }
+            .onChange(of: premiumStore.isPremiumUnlocked) { _, unlocked in
+                guard unlocked, stage == .preview else { return }
+                HumHaptics.reveal()
+            }
+            .onReceive(humCreationTicker) { now in
+                handleTick(now)
+            }
+            .onDisappear {
+                analyzeTask?.cancel()
+                recorder.cancelCapture()
+            }
+        }
+    }
+
+    private var micFillProgress: CGFloat {
+        switch stage {
+        case .idle:
+            return max(0.08, entryProgress)
+        case .opening, .recording, .analyzing:
+            return 1
+        case .preview:
+            return 0
+        }
+    }
+
+    @ViewBuilder
+    private func fullBleedBackdrop(
+        configuration: AquariumConfiguration,
+        size: CGSize
+    ) -> some View {
         ZStack {
-            AmbientScreenBackdrop(
-                configuration: .appIcon,
-                renderStyle: .lightweight
+            LinearGradient(
+                colors: [
+                    Color(red: 0.03, green: 0.20, blue: 0.38),
+                    Color(red: 0.04, green: 0.34, blue: 0.56),
+                    Color(red: 0.04, green: 0.46, blue: 0.69),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
             )
 
-            VStack(spacing: 26) {
-                Spacer(minLength: max(42, safeAreaInsets.top + 28))
+            HumCreationBackdrop(
+                colors: configuration.ambientBackdropColors,
+                isImmersive: stage != .idle
+            )
+        }
+        .frame(width: size.width, height: size.height)
+    }
 
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("New Tank")
-                        .font(.system(size: 46, weight: .medium, design: .serif))
+    @ViewBuilder
+    private func idleAndCaptureLayer(
+        in size: CGSize,
+        micDiameter: CGFloat,
+        micCenterY: CGFloat
+    ) -> some View {
+        VStack(spacing: 0) {
+            if stage != .idle {
+                VStack(spacing: 10) {
+                    Text(stageTitle)
+                        .font(.system(size: 28, weight: .semibold, design: .serif))
+                        .foregroundStyle(Color.white.opacity(0.92))
+
+                    if stage == .recording {
+                        Text(recordingCounterLine)
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                            .foregroundStyle(Color.white.opacity(0.72))
+                    }
+
+                    if let statusMessage {
+                        statusChip(statusMessage)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.top, max(20, safeAreaInsets.top + 2))
+                .padding(.horizontal, 24)
+                .transition(.opacity)
+            } else {
+                Spacer(minLength: max(24, safeAreaInsets.top + 8))
+            }
+
+            Spacer(minLength: 0)
+
+            if stage == .recording || stage == .opening {
+                VStack(spacing: 14) {
+                    HumWaveformView(
+                        levels: recorder.waveformLevels,
+                        maxHeight: 84,
+                        barWidth: 6
+                    )
+                    .frame(height: 88)
+                    .frame(maxWidth: min(size.width - 72, 340))
+                }
+                .padding(.bottom, max(76, size.height - micCenterY - micDiameter * 0.74))
+                .transition(.opacity)
+            } else {
+                Spacer(minLength: micDiameter + 92)
+            }
+
+            if stage == .idle {
+                VStack(spacing: 14) {
+                    if let statusMessage {
+                        statusChip(statusMessage)
+                    }
+
+                    ActionGlassButton(title: "New Tank", systemImage: "plus") {
+                        statusMessage = nil
+                        onCreate()
+                    }
+                    .allowsHitTesting(true)
+
+                    if recorder.permissionDenied {
+                        Button("Microphone Settings") {
+                            openSettings()
+                        }
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Color.white.opacity(0.76))
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 28)
+                .padding(.bottom, max(42, safeAreaInsets.bottom + 18))
+                .transition(.opacity)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(.easeInOut(duration: 0.32), value: stage)
+    }
+
+    @ViewBuilder
+    private func previewLayer(for generatedDraft: HumGeneratedBowl, in size: CGSize) -> some View {
+        VStack(spacing: 22) {
+            Spacer(minLength: max(34, safeAreaInsets.top + 18))
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text(generatedDraft.profile.name)
+                    .font(.system(size: 42, weight: .medium, design: .serif))
+                    .foregroundStyle(colorScheme.fishbowlPrimaryText)
+                    .lineLimit(2)
+
+                Text(generatedDraft.analysis.headline)
+                    .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Color.white.opacity(0.82))
+
+                Text(generatedDraft.analysis.detailLine)
+                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                    .foregroundStyle(Color.white.opacity(0.66))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 28)
+
+            AquariumSceneView(
+                configuration: generatedDraft.profile.configuration,
+                format: .studioHero,
+                phase: Date.now.timeIntervalSinceReferenceDate / 5.4,
+                petSnapshot: generatedDraft.profile.petSnapshot(at: .now)
+            )
+            .frame(height: min(size.height * 0.46, 390))
+            .padding(.horizontal, 18)
+            .drawingGroup(opaque: false)
+
+            GlassPanel(cornerRadius: 34, showsGlassEffect: false) {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text(generatedDraft.profile.configuration.descriptor)
+                        .font(.system(size: 24, weight: .semibold, design: .serif))
                         .foregroundStyle(colorScheme.fishbowlPrimaryText)
 
-                    Text("Slot \(slotNumber) of \(tankLimit) is open. Tap below to make a fresh bowl or pet tank.")
-                        .font(.system(size: 17, weight: .medium, design: .rounded))
+                    Text(generatedDraft.profile.configuration.detailLine)
+                        .font(.system(size: 14, weight: .medium, design: .rounded))
                         .foregroundStyle(colorScheme.fishbowlSecondaryText)
                         .fixedSize(horizontal: false, vertical: true)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
 
-                Button(action: onCreate) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 38, style: .continuous)
-                            .fill(colorScheme.fishbowlElevatedFill)
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 38, style: .continuous)
-                                    .stroke(colorScheme.fishbowlElevatedStroke, lineWidth: 1)
-                            }
-                            .shadow(color: colorScheme.fishbowlShadow.opacity(0.8), radius: 18, y: 10)
+                    if premiumStore.isPremiumUnlocked {
+                        HStack(spacing: 10) {
+                            Image(systemName: "hand.tap.fill")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(Color.white.opacity(0.96))
 
-                        VStack(spacing: 14) {
-                            Image(systemName: "plus")
-                                .font(.system(size: 46, weight: .medium))
-                                .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.74) : Color.black.opacity(0.76))
-
-                            Text("Make a New Tank")
-                                .font(.system(size: 21, weight: .semibold, design: .serif))
-                                .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.86) : Color.black.opacity(0.84))
-
-                            Text("Pick the fish, choose the bowl, and give it a name.")
-                                .font(.system(size: 15, weight: .medium, design: .rounded))
-                                .foregroundStyle(colorScheme.fishbowlSecondaryText)
+                            Text("Tap anywhere to keep it.")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                .foregroundStyle(Color.white.opacity(0.96))
                         }
-                        .padding(30)
-                    }
-                    .aspectRatio(1, contentMode: .fit)
-                }
-                .buttonStyle(.plain)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .fill(Color.black.opacity(0.22))
+                        )
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .stroke(Color.white.opacity(0.14), lineWidth: 1)
+                        }
+                    } else {
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack(spacing: 10) {
+                                Image(systemName: "crown.fill")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(Color(red: 0.86, green: 0.72, blue: 0.24))
 
-                Spacer(minLength: max(26, safeAreaInsets.bottom + 12))
+                                Text("Unlock Premium To Keep This Bowl")
+                                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(colorScheme.fishbowlPrimaryText)
+                            }
+
+                            Text("This reveal is the hard gate. Premium lets you save hum-made bowls and keep generating new ones from your voice.")
+                                .font(.system(size: 14, weight: .medium, design: .rounded))
+                                .foregroundStyle(colorScheme.fishbowlSecondaryText)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            Button {
+                                isPremiumSheetPresented = true
+                            } label: {
+                                Text(premiumStore.purchaseButtonTitle)
+                                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(Color.white)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 15)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 22, style: .continuous)
+                                            .fill(
+                                                LinearGradient(
+                                                    colors: [
+                                                        Color(red: 0.15, green: 0.28, blue: 0.57),
+                                                        Color(red: 0.15, green: 0.54, blue: 0.89),
+                                                    ],
+                                                    startPoint: .leading,
+                                                    endPoint: .trailing
+                                                )
+                                            )
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
             }
-            .padding(.horizontal, 28)
+            .padding(.horizontal, 22)
+
+            Spacer(minLength: max(22, safeAreaInsets.bottom + 12))
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard premiumStore.isPremiumUnlocked else { return }
+            keepGeneratedBowl()
+        }
+    }
+
+    private var micHoldGesture: some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { _ in
+                guard stage != .analyzing, stage != .preview else { return }
+                guard !isTouchActive else { return }
+
+                isTouchActive = true
+                statusMessage = nil
+
+                if stage == .idle {
+                    holdStartedAt = .now
+                    entryProgress = 0
+                    holdMilestone = 0
+                    HumHaptics.beginHold()
+                }
+            }
+            .onEnded { _ in
+                let wasTouchActive = isTouchActive
+                isTouchActive = false
+                guard wasTouchActive else { return }
+
+                switch stage {
+                case .idle:
+                    collapseEntryFill()
+                case .opening:
+                    resetCreationFlow(clearStatus: false)
+                case .recording:
+                    finishRecording()
+                case .analyzing, .preview:
+                    break
+                }
+            }
+    }
+
+    private var stageTitle: String {
+        switch stage {
+        case .idle:
+            return ""
+        case .opening:
+            return "Listening"
+        case .recording:
+            return "Hum"
+        case .analyzing:
+            return "Analyzing"
+        case .preview:
+            return ""
+        }
+    }
+
+    private var recordingCounterLine: String {
+        let elapsed = maxRecordingDuration * Double(recordingProgress)
+        let remaining = max(0, maxRecordingDuration - elapsed)
+        return String(format: "%.1fs recorded  •  %.1fs left", elapsed, remaining)
+    }
+
+    private func handleTick(_ now: Date) {
+        switch stage {
+        case .idle:
+            guard isTouchActive, let holdStartedAt else { return }
+            let progress = CGFloat(min(now.timeIntervalSince(holdStartedAt) / entryDuration, 1))
+            if progress != entryProgress {
+                entryProgress = progress
+            }
+
+            let milestone = min(Int(progress * 5), 5)
+            if milestone > holdMilestone {
+                holdMilestone = milestone
+                HumHaptics.fillStep()
+            }
+
+            if progress >= 1 {
+                beginRecordingSequence()
+            }
+
+        case .recording:
+            guard let recordingStartedAt else { return }
+            let progress = CGFloat(min(now.timeIntervalSince(recordingStartedAt) / maxRecordingDuration, 1))
+            if progress != recordingProgress {
+                recordingProgress = progress
+            }
+
+            if progress >= 1 {
+                finishRecording()
+            }
+
+        case .opening, .analyzing, .preview:
+            break
+        }
+    }
+
+    private func beginRecordingSequence() {
+        guard stage == .idle else { return }
+        stage = .opening
+        entryProgress = 1
+
+        Task { @MainActor in
+            switch await recorder.ensurePermission() {
+            case .ready:
+                break
+            case .justGranted:
+                resetCreationFlow(clearStatus: true)
+                return
+            case .denied:
+                statusMessage = "Microphone off"
+                HumHaptics.warning()
+                resetCreationFlow(clearStatus: false)
+                return
+            }
+
+            guard isTouchActive else {
+                resetCreationFlow(clearStatus: false)
+                return
+            }
+
+            do {
+                try recorder.startCapture()
+                recordingStartedAt = .now
+                recordingProgress = 0
+                stage = .recording
+                HumHaptics.recordingStarted()
+            } catch {
+                statusMessage = "Couldn’t start mic"
+                HumHaptics.warning()
+                resetCreationFlow(clearStatus: false)
+            }
+        }
+    }
+
+    private func finishRecording() {
+        guard stage == .recording else { return }
+
+        isTouchActive = false
+        let duration = min(
+            maxRecordingDuration,
+            max(0.5, Date.now.timeIntervalSince(recordingStartedAt ?? .now))
+        )
+
+        let analysis = recorder.finishCapture(recordedDuration: duration)
+        recordingStartedAt = nil
+        recordingProgress = 0
+        stage = .analyzing
+        HumHaptics.recordingEnded()
+        startAnalyzing(analysis)
+    }
+
+    private func startAnalyzing(_ analysis: HumAudioAnalysis) {
+        analyzeTask?.cancel()
+        analyzeTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: analysisDurationNanoseconds)
+            guard !Task.isCancelled else { return }
+
+            let profile = HumBowlGenerator.makeProfile(from: analysis)
+            generatedDraft = HumGeneratedBowl(profile: profile, analysis: analysis)
+            stage = .preview
+            HumHaptics.reveal()
+        }
+    }
+
+    private func keepGeneratedBowl() {
+        guard let generatedDraft else { return }
+        onGenerated(generatedDraft.profile)
+        resetCreationFlow(clearStatus: true)
+    }
+
+    private func collapseEntryFill() {
+        holdStartedAt = nil
+        holdMilestone = 0
+        withAnimation(.easeOut(duration: 0.22)) {
+            entryProgress = 0
+        }
+    }
+
+    private func resetCreationFlow(clearStatus: Bool) {
+        analyzeTask?.cancel()
+        analyzeTask = nil
+        recorder.cancelCapture()
+        stage = .idle
+        holdStartedAt = nil
+        recordingStartedAt = nil
+        isTouchActive = false
+        recordingProgress = 0
+        holdMilestone = 0
+        generatedDraft = nil
+        if clearStatus {
+            statusMessage = nil
+        }
+
+        withAnimation(.easeOut(duration: 0.22)) {
+            entryProgress = 0
+        }
+    }
+
+    private func openSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(url)
+    }
+
+    @ViewBuilder
+    private func statusChip(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 13, weight: .semibold, design: .rounded))
+            .foregroundStyle(Color.white.opacity(0.88))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .background {
+                Capsule(style: .continuous)
+                    .fill(Color.black.opacity(0.18))
+                    .overlay {
+                        Capsule(style: .continuous)
+                            .stroke(Color.white.opacity(0.16), lineWidth: 1)
+                    }
+            }
+    }
+}
+
+private enum HumCreationStage {
+    case idle
+    case opening
+    case recording
+    case analyzing
+    case preview
+}
+
+private struct HumGeneratedBowl {
+    let profile: BowlProfile
+    let analysis: HumAudioAnalysis
+}
+
+private enum HumMicPermissionState {
+    case ready
+    case justGranted
+    case denied
+}
+
+private enum HumHumMood: String {
+    case hush
+    case tide
+    case bloom
+    case spark
+
+    var headline: String {
+        switch self {
+        case .hush:
+            return "Soft, steady, and close to the glass."
+        case .tide:
+            return "Low and tidal with a deeper pull."
+        case .bloom:
+            return "Warm, rounded, and a little luminous."
+        case .spark:
+            return "Bright, lively, and built to move."
+        }
+    }
+}
+
+private struct HumAudioAnalysis {
+    let averageLevel: Double
+    let peakLevel: Double
+    let variance: Double
+    let pitch: Double
+    let duration: TimeInterval
+
+    var mood: HumHumMood {
+        if pitch > 225 || (averageLevel > 0.48 && variance > 0.022) {
+            return .spark
+        }
+
+        if pitch < 145 {
+            return .tide
+        }
+
+        if averageLevel < 0.26 && variance < 0.012 {
+            return .hush
+        }
+
+        return .bloom
+    }
+
+    var headline: String {
+        mood.headline
+    }
+
+    var detailLine: String {
+        let tone: String
+        switch pitch {
+        case ..<145:
+            tone = "low tone"
+        case ..<215:
+            tone = "mid tone"
+        default:
+            tone = "bright tone"
+        }
+
+        let energy: String
+        switch averageLevel {
+        case ..<0.22:
+            energy = "gentle energy"
+        case ..<0.44:
+            energy = "balanced energy"
+        default:
+            energy = "strong energy"
+        }
+
+        let texture = variance < 0.014 ? "steady texture" : "shifting texture"
+        return "\(tone) • \(energy) • \(texture)"
+    }
+
+    var seed: UInt64 {
+        let a = UInt64((averageLevel * 10_000).rounded())
+        let p = UInt64((pitch * 100).rounded())
+        let v = UInt64((variance * 1_000_000).rounded())
+        let d = UInt64((duration * 1_000).rounded())
+        return a ^ (p << 1) ^ (v << 7) ^ (d << 13) ^ 0x9E3779B97F4A7C15
+    }
+}
+
+@MainActor
+private final class HumBowlRecorder: ObservableObject {
+    @Published private(set) var waveformLevels: [CGFloat] = Array(repeating: 0.18, count: 24)
+    @Published private(set) var permissionDenied = false
+
+    private let core = HumBowlRecorderCore()
+
+    func ensurePermission() async -> HumMicPermissionState {
+        switch AVAudioApplication.shared.recordPermission {
+        case .granted:
+            permissionDenied = false
+            return .ready
+        case .denied:
+            permissionDenied = true
+            return .denied
+        case .undetermined:
+            let granted = await withCheckedContinuation { continuation in
+                AVAudioApplication.requestRecordPermission { allowed in
+                    continuation.resume(returning: allowed)
+                }
+            }
+            permissionDenied = !granted
+            return granted ? .justGranted : .denied
+        @unknown default:
+            permissionDenied = true
+            return .denied
+        }
+    }
+
+    func startCapture() throws {
+        waveformLevels = Array(repeating: 0.18, count: 24)
+        try core.startCapture { [weak self] normalizedLevel in
+            Task { @MainActor [weak self] in
+                self?.appendWaveformLevel(CGFloat(normalizedLevel))
+            }
+        }
+    }
+
+    func finishCapture(recordedDuration: TimeInterval) -> HumAudioAnalysis {
+        let snapshot = core.finishCapture()
+
+        let levels = snapshot.normalizedLevels.isEmpty ? [0.18, 0.22, 0.20] : snapshot.normalizedLevels
+        let averageLevel = levels.reduce(0, +) / Double(levels.count)
+        let variance = levels.reduce(0) { partialResult, level in
+            partialResult + pow(level - averageLevel, 2)
+        } / Double(levels.count)
+        let pitchLevels = snapshot.pitchSamples.isEmpty ? [178] : snapshot.pitchSamples
+        let pitch = pitchLevels.reduce(0, +) / Double(pitchLevels.count)
+
+        return HumAudioAnalysis(
+            averageLevel: averageLevel,
+            peakLevel: snapshot.peakLevel,
+            variance: variance,
+            pitch: pitch,
+            duration: recordedDuration
+        )
+    }
+
+    func cancelCapture() {
+        core.cancelCapture()
+        waveformLevels = Array(repeating: 0.18, count: 24)
+    }
+
+    private func appendWaveformLevel(_ level: CGFloat) {
+        waveformLevels.append(level)
+        if waveformLevels.count > 24 {
+            waveformLevels.removeFirst(waveformLevels.count - 24)
+        }
+    }
+}
+
+private final class HumBowlRecorderCore: @unchecked Sendable {
+    private let audioEngine = AVAudioEngine()
+    private let analysisQueue = DispatchQueue(label: "com.nate.fishbowl.hum-analysis")
+    private var metrics = HumRecorderMetrics()
+    private var onWaveformSample: (@Sendable (Double) -> Void)?
+
+    func startCapture(onWaveformSample: @escaping @Sendable (Double) -> Void) throws {
+        let audioSession = AVAudioSession.sharedInstance()
+        try audioSession.setCategory(.playAndRecord, mode: .measurement, options: [.mixWithOthers, .defaultToSpeaker])
+        try audioSession.setActive(true, options: [])
+
+        analysisQueue.sync {
+            metrics = HumRecorderMetrics()
+            self.onWaveformSample = onWaveformSample
+        }
+
+        let inputNode = audioEngine.inputNode
+        let format = inputNode.inputFormat(forBus: 0)
+        inputNode.removeTap(onBus: 0)
+        inputNode.installTap(onBus: 0, bufferSize: 1_024, format: format) { [weak self] buffer, _ in
+            self?.consume(buffer: buffer, sampleRate: format.sampleRate)
+        }
+
+        audioEngine.prepare()
+        try audioEngine.start()
+    }
+
+    func finishCapture() -> HumRecorderMetrics {
+        stopAudio()
+        return analysisQueue.sync {
+            let snapshot = metrics
+            metrics = HumRecorderMetrics()
+            onWaveformSample = nil
+            return snapshot
+        }
+    }
+
+    func cancelCapture() {
+        stopAudio()
+        analysisQueue.sync {
+            metrics = HumRecorderMetrics()
+            onWaveformSample = nil
+        }
+    }
+
+    private func stopAudio() {
+        let inputNode = audioEngine.inputNode
+        inputNode.removeTap(onBus: 0)
+        audioEngine.stop()
+        audioEngine.reset()
+        try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+    }
+
+    private func consume(buffer: AVAudioPCMBuffer, sampleRate: Double) {
+        guard let channelData = buffer.floatChannelData?[0] else { return }
+        let frameCount = Int(buffer.frameLength)
+        guard frameCount > 0 else { return }
+
+        var squareSum: Float = 0
+        var zeroCrossings = 0
+        var previousValue = channelData[0]
+
+        for index in 0..<frameCount {
+            let sample = channelData[index]
+            squareSum += sample * sample
+            if index > 0, (sample >= 0 && previousValue < 0) || (sample < 0 && previousValue >= 0) {
+                zeroCrossings += 1
+            }
+            previousValue = sample
+        }
+
+        let rms = sqrt(squareSum / Float(frameCount))
+        let decibels = 20 * log10(max(Double(rms), 0.000_015))
+        let normalizedLevel = pow(max(0, min(1, (decibels + 54) / 30)), 0.72)
+        let pitchEstimate = Double(zeroCrossings) * sampleRate / Double(frameCount * 2)
+        let waveformOutput = analysisQueue.sync { () -> (@Sendable (Double) -> Void)? in
+            metrics.normalizedLevels.append(normalizedLevel)
+            if metrics.normalizedLevels.count > 240 {
+                metrics.normalizedLevels.removeFirst(metrics.normalizedLevels.count - 240)
+            }
+
+            metrics.peakLevel = max(metrics.peakLevel, normalizedLevel)
+
+            if pitchEstimate.isFinite, pitchEstimate >= 70, pitchEstimate <= 420 {
+                metrics.pitchSamples.append(pitchEstimate)
+                if metrics.pitchSamples.count > 120 {
+                    metrics.pitchSamples.removeFirst(metrics.pitchSamples.count - 120)
+                }
+            }
+
+            return onWaveformSample
+        }
+
+        waveformOutput?(normalizedLevel)
+    }
+}
+
+private struct HumRecorderMetrics {
+    var normalizedLevels: [Double] = []
+    var pitchSamples: [Double] = []
+    var peakLevel: Double = 0
+}
+
+private enum HumBowlGenerator {
+    static func makeProfile(from analysis: HumAudioAnalysis) -> BowlProfile {
+        var picker = SeededHumPicker(seed: analysis.seed)
+        let mood = analysis.mood
+
+        let vesselPool: [AquariumVesselStyle]
+        let fishPool: [FishSpecies]
+        let substratePool: [SubstrateStyle]
+        let decorationPool: [DecorationStyle]
+        let featurePool: [FeaturePieceStyle]
+        let companionPool: [CompanionStyle]
+        let personality: FishPersonality
+        let adjectives: [String]
+        let nouns: [String]
+
+        switch mood {
+        case .hush:
+            vesselPool = [.orb, .gallery]
+            fishPool = [.royalBetta, .glassGold, .opalAngelfish]
+            substratePool = [.pearlSand, .moonGravel]
+            decorationPool = [.minimal, .glassPearls]
+            featurePool = [.bubbleStone, .moonLantern]
+            companionPool = [.snail, .shrimp]
+            personality = .dreamy
+            adjectives = ["Soft", "Silent", "Pearl", "Velvet"]
+            nouns = ["Lagoon", "Glass", "Drift", "Hush"]
+
+        case .tide:
+            vesselPool = [.orb, .panorama]
+            fishPool = [.moonKoi, .leopardShark, .glassGold]
+            substratePool = [.obsidianSand, .moonGravel]
+            decorationPool = [.riverRocks, .glassPearls]
+            featurePool = [.driftwoodArch, .moonLantern, .kelp]
+            companionPool = [.crab, .snail, .seaCucumber]
+            personality = .shy
+            adjectives = ["Blue", "Midnight", "Tidal", "Deep"]
+            nouns = ["Current", "Basin", "Reef", "Pool"]
+
+        case .bloom:
+            vesselPool = [.gallery, .panorama]
+            fishPool = [.moonKoi, .opalAngelfish, .glassGold, .royalBetta]
+            substratePool = [.pearlSand, .coralBloom, .moonGravel]
+            decorationPool = [.glassPearls, .riverRocks, .coralGarden]
+            featurePool = [.moonLantern, .bubbleStone, .kelp]
+            companionPool = [.shrimp, .nudibranchRibbon, .snail]
+            personality = .playful
+            adjectives = ["Lush", "Bloom", "Golden", "Warm"]
+            nouns = ["Bowl", "Lantern", "Garden", "Glow"]
+
+        case .spark:
+            vesselPool = [.panorama, .gallery]
+            fishPool = [.neonGuppy, .emberTetra, .opalAngelfish, .moonKoi]
+            substratePool = [.obsidianSand, .coralBloom, .moonGravel]
+            decorationPool = [.coralGarden, .glassPearls, .riverRocks]
+            featurePool = [.kelp, .moonLantern, .driftwoodArch]
+            companionPool = [.crab, .shrimp, .nudibranchFlame]
+            personality = .greedy
+            adjectives = ["Neon", "Electric", "Bright", "Wild"]
+            nouns = ["Surge", "Pulse", "Flash", "Current"]
+        }
+
+        let fishCount: FishCount
+        if analysis.variance > 0.024 {
+            fishCount = .trio
+        } else if analysis.duration > 5.1 {
+            fishCount = .duet
+        } else {
+            fishCount = .solo
+        }
+
+        let primaryFish = picker.pick(fishPool)
+        let allowsMixedSpecies = analysis.averageLevel > 0.32 || analysis.variance > 0.016 || mood == .spark
+        let extraCount = max(0, fishCount.value - 1)
+        var extras: [FishSpecies] = []
+
+        for _ in 0..<extraCount {
+            if allowsMixedSpecies, picker.coinFlip() {
+                let alternatePool = Array(Set(fishPool.filter { $0 != primaryFish }))
+                extras.append(alternatePool.isEmpty ? primaryFish : picker.pick(alternatePool))
+            } else {
+                extras.append(primaryFish)
+            }
+        }
+
+        let companionCount: Int
+        if analysis.averageLevel > 0.52 {
+            companionCount = 2
+        } else if analysis.averageLevel > 0.30 || mood == .spark {
+            companionCount = 1
+        } else {
+            companionCount = 0
+        }
+
+        var companions: [CompanionStyle] = []
+        while companions.count < companionCount {
+            let candidate = picker.pick(companionPool)
+            if !companions.contains(candidate) {
+                companions.append(candidate)
+            }
+        }
+
+        let profile = BowlProfile(
+            name: "\(picker.pick(adjectives)) \(picker.pick(nouns))",
+            configuration: AquariumConfiguration(
+                vesselStyle: picker.pick(vesselPool),
+                fishSpecies: primaryFish,
+                fishCount: fishCount,
+                additionalFishSpecies: extras,
+                personality: personality,
+                companions: companions,
+                substrate: picker.pick(substratePool),
+                decoration: picker.pick(decorationPool),
+                featurePiece: picker.pick(featurePool)
+            ),
+            mode: .pet,
+            petState: .fresh()
+        )
+
+        return profile
+    }
+}
+
+private struct SeededHumPicker {
+    private var state: UInt64
+
+    init(seed: UInt64) {
+        state = seed == 0 ? 0x1234_5678_ABCD_EF01 : seed
+    }
+
+    mutating func pick<T>(_ values: [T]) -> T {
+        values[nextIndex(upperBound: values.count)]
+    }
+
+    mutating func coinFlip() -> Bool {
+        nextIndex(upperBound: 2) == 0
+    }
+
+    private mutating func nextIndex(upperBound: Int) -> Int {
+        guard upperBound > 0 else { return 0 }
+        state &+= 0x9E3779B97F4A7C15
+        var value = state
+        value = (value ^ (value >> 30)) &* 0xBF58476D1CE4E5B9
+        value = (value ^ (value >> 27)) &* 0x94D049BB133111EB
+        value = value ^ (value >> 31)
+        return Int(value % UInt64(upperBound))
+    }
+}
+
+private struct HumCreationBackdrop: View {
+    let colors: [Color]
+    let isImmersive: Bool
+
+    var body: some View {
+        TimelineView(.animation) { timeline in
+            GeometryReader { geometry in
+                let phase = timeline.date.timeIntervalSinceReferenceDate
+                let palette = (colors + [Color(red: 0.13, green: 0.44, blue: 0.71)]).prefix(3)
+                let resolved = Array(palette)
+
+                ZStack {
+                    Ellipse()
+                        .fill(resolved[0].opacity(isImmersive ? 0.14 : 0.08))
+                        .frame(width: geometry.size.width * 0.84, height: geometry.size.height * 0.22)
+                        .blur(radius: 54)
+                        .offset(
+                            x: -geometry.size.width * 0.18,
+                            y: -geometry.size.height * (isImmersive ? 0.26 : 0.22)
+                        )
+
+                    Ellipse()
+                        .fill(resolved[1].opacity(isImmersive ? 0.08 : 0.05))
+                        .frame(width: geometry.size.width * 0.50, height: geometry.size.height * 0.16)
+                        .blur(radius: 36)
+                        .offset(
+                            x: geometry.size.width * 0.22,
+                            y: -geometry.size.height * 0.01
+                        )
+
+                    ForEach(0..<14, id: \.self) { index in
+                        let normalizedX = CGFloat((index * 17) % 100) / 100
+                        let loop = ((phase * 24) + Double(index * 31)).truncatingRemainder(dividingBy: Double(geometry.size.height + 180))
+                        let y = geometry.size.height + 90 - loop
+                        let x = geometry.size.width * (0.12 + normalizedX * 0.76)
+                        let drift = sin(phase * 0.65 + Double(index)) * 14
+                        let size = CGFloat(8 + (index % 3) * 5)
+
+                        Circle()
+                            .fill(Color.white.opacity(isImmersive ? 0.14 : 0.08))
+                            .frame(width: size, height: size)
+                            .blur(radius: size > 10 ? 1.4 : 0.6)
+                            .position(x: x + drift, y: y)
+                    }
+
+                    HumJellyfishDriftLayer(
+                        phase: phase,
+                        size: geometry.size,
+                        isImmersive: isImmersive,
+                        tint: resolved[2]
+                    )
+                }
+            }
+        }
+    }
+}
+
+private struct HumJellyfishDriftLayer: View {
+    let phase: TimeInterval
+    let size: CGSize
+    let isImmersive: Bool
+    let tint: Color
+
+    var body: some View {
+        let motionPhase = phase * 0.2
+
+        ForEach(0..<3, id: \.self) { index in
+            let cycleDuration = 24.0 + Double(index) * 5.5
+            let cycle = ((motionPhase + Double(index) * 7.0) / cycleDuration).truncatingRemainder(dividingBy: 1)
+            let start = 0.14 + Double(index) * 0.07
+            let end = start + 0.30
+            let visibility = jellyVisibility(progress: cycle, start: start, end: end)
+            let travel = max(0, min(1, (cycle - start) / max(end - start, 0.001)))
+            let baseX = size.width * [0.22, 0.74, 0.48][index]
+            let horizontalDrift = sin(motionPhase * (0.62 + Double(index) * 0.1) + Double(index) * 1.8)
+            let x = baseX + CGFloat(horizontalDrift) * (18 + CGFloat(index) * 8)
+            let y = size.height + 90 - CGFloat(travel) * (size.height + 220)
+            let jellySize = 62 + CGFloat(index) * 16
+            let scale = 0.84 + CGFloat(index) * 0.10 + CGFloat(sin(motionPhase * 1.1 + Double(index)) * 0.03)
+
+            HumJellyfishView(
+                phase: motionPhase + Double(index),
+                tint: tint,
+                size: jellySize
+            )
+            .scaleEffect(scale)
+            .position(x: x, y: y)
+            .opacity(visibility * (isImmersive ? 0.46 : 0.28))
+        }
+        .blendMode(.screen)
+        .allowsHitTesting(false)
+    }
+
+    private func jellyVisibility(progress: Double, start: Double, end: Double) -> Double {
+        guard progress >= start, progress <= end else { return 0 }
+        let normalized = (progress - start) / max(end - start, 0.001)
+        let fadeIn = min(1, normalized / 0.24)
+        let fadeOut = min(1, (1 - normalized) / 0.28)
+        return min(fadeIn, fadeOut)
+    }
+}
+
+private struct HumJellyfishView: View {
+    let phase: TimeInterval
+    let tint: Color
+    let size: CGFloat
+
+    private var tentacleGradient: LinearGradient {
+        LinearGradient(
+            colors: [
+                Color.white.opacity(0.72),
+                tint.opacity(0.30),
+                Color.clear,
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            HStack(alignment: .top, spacing: size * 0.055) {
+                ForEach(0..<5, id: \.self) { index in
+                    tentacle(index)
+                }
+            }
+            .offset(y: size * 0.28)
+
+            ZStack {
+                HumJellyBellShape()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.82),
+                                tint.opacity(0.42),
+                                Color.clear.opacity(0.1),
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+
+                HumJellyBellShape()
+                    .stroke(Color.white.opacity(0.42), lineWidth: max(1, size * 0.022))
+
+                Ellipse()
+                    .fill(Color.white.opacity(0.28))
+                    .frame(width: size * 0.42, height: size * 0.10)
+                    .blur(radius: size * 0.03)
+                    .offset(x: -size * 0.08, y: size * 0.08)
+            }
+            .frame(width: size * 0.82, height: size * 0.50)
+        }
+        .frame(width: size, height: size * 1.15)
+        .shadow(color: tint.opacity(0.12), radius: size * 0.10, y: size * 0.06)
+        .blur(radius: 0.35)
+    }
+
+    @ViewBuilder
+    private func tentacle(_ index: Int) -> some View {
+        let height = size * (0.82 + CGFloat(index.isMultiple(of: 2) ? 0.02 : 0.14))
+        let swayBase = sin(phase * 2.6 + Double(index) * 0.8) * Double(size * 0.09)
+        let swayPulse = sin(phase * 1.8) * Double(size * 0.03)
+        let sway = CGFloat(swayBase + swayPulse)
+
+        HumJellyTentacleShape(sway: sway)
+            .stroke(
+                tentacleGradient,
+                style: StrokeStyle(lineWidth: max(1.2, size * 0.026), lineCap: .round)
+            )
+            .frame(width: size * 0.12, height: height)
+    }
+}
+
+private struct HumJellyBellShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.midX, y: rect.minY))
+        path.addCurve(
+            to: CGPoint(x: rect.maxX, y: rect.height * 0.52),
+            control1: CGPoint(x: rect.width * 0.84, y: rect.minY),
+            control2: CGPoint(x: rect.maxX, y: rect.height * 0.18)
+        )
+        path.addQuadCurve(
+            to: CGPoint(x: rect.width * 0.78, y: rect.height * 0.88),
+            control: CGPoint(x: rect.maxX, y: rect.height * 0.94)
+        )
+        path.addQuadCurve(
+            to: CGPoint(x: rect.width * 0.22, y: rect.height * 0.88),
+            control: CGPoint(x: rect.midX, y: rect.height)
+        )
+        path.addQuadCurve(
+            to: CGPoint(x: rect.minX, y: rect.height * 0.52),
+            control: CGPoint(x: rect.minX, y: rect.height * 0.94)
+        )
+        path.addCurve(
+            to: CGPoint(x: rect.midX, y: rect.minY),
+            control1: CGPoint(x: rect.minX, y: rect.height * 0.18),
+            control2: CGPoint(x: rect.width * 0.16, y: rect.minY)
+        )
+        return path
+    }
+}
+
+private struct HumJellyTentacleShape: Shape {
+    let sway: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.midX, y: rect.minY))
+        path.addCurve(
+            to: CGPoint(x: rect.midX + sway * 0.35, y: rect.maxY),
+            control1: CGPoint(x: rect.midX + sway * 0.16, y: rect.height * 0.24),
+            control2: CGPoint(x: rect.midX - sway, y: rect.height * 0.72)
+        )
+        return path
+    }
+}
+
+private struct HumTankChrome: View {
+    var cornerRadius: CGFloat = 38
+
+    var body: some View {
+        GeometryReader { geometry in
+            let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+
+            ZStack {
+                shape
+                    .stroke(Color.white.opacity(0.24), lineWidth: 1.2)
+
+                shape
+                    .inset(by: 3)
+                    .stroke(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.72),
+                                Color.white.opacity(0.06),
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+
+                shape
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.08),
+                                Color.clear,
+                                Color.white.opacity(0.03),
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+
+                Rectangle()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.24),
+                                Color.clear,
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(height: min(geometry.size.height * 0.22, 140))
+                    .clipShape(shape)
+                    .blendMode(.screen)
+            }
+            .shadow(color: Color.black.opacity(0.12), radius: 18, y: 8)
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+private struct HumMicButton: View {
+    let stage: HumCreationStage
+    let fillProgress: CGFloat
+    let recordingProgress: CGFloat
+    let waveformLevels: [CGFloat]
+
+    var body: some View {
+        TimelineView(.animation) { timeline in
+            let phase = timeline.date.timeIntervalSinceReferenceDate
+
+            ZStack {
+                Circle()
+                    .fill(Color.black.opacity(stage == .idle ? 0.18 : 0.24))
+                    .background {
+                        Circle()
+                            .fill(
+                                RadialGradient(
+                                    colors: [
+                                        Color.white.opacity(0.20),
+                                        Color(red: 0.06, green: 0.21, blue: 0.34).opacity(stage == .idle ? 0.78 : 0.92),
+                                    ],
+                                    center: .topLeading,
+                                    startRadius: 10,
+                                    endRadius: 180
+                                )
+                            )
+                    }
+
+                MicWaterFillShape(
+                    level: fillProgress,
+                    phase: phase,
+                    amplitude: stage == .idle ? 8 : 12
+                )
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.42, green: 0.84, blue: 0.98).opacity(0.95),
+                            Color(red: 0.16, green: 0.58, blue: 0.93).opacity(0.98),
+                            Color(red: 0.07, green: 0.32, blue: 0.76).opacity(1.0),
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .clipShape(Circle())
+
+                if stage == .analyzing {
+                    ForEach(0..<3, id: \.self) { index in
+                        Circle()
+                            .stroke(Color.white.opacity(0.24 - Double(index) * 0.05), lineWidth: 1.4)
+                            .scaleEffect(
+                                0.56 + CGFloat(index) * 0.16
+                                + CGFloat((sin(phase * 2.1 - Double(index)) + 1) * 0.08)
+                            )
+                    }
+                } else {
+                    Image(systemName: "mic.fill")
+                        .font(.system(size: stage == .idle ? 46 : 42, weight: .medium))
+                        .foregroundStyle(Color.white.opacity(0.92))
+                        .offset(y: stage == .recording ? -14 : -6)
+                }
+
+                Circle()
+                    .trim(from: 0, to: stage == .recording ? max(0.02, recordingProgress) : 0)
+                    .stroke(
+                        Color.white.opacity(0.98),
+                        style: StrokeStyle(lineWidth: 4, lineCap: .round)
+                    )
+                    .rotationEffect(.degrees(-90))
+                    .padding(6)
+                    .opacity(stage == .recording ? 1 : 0)
+
+                Circle()
+                    .stroke(Color.white.opacity(0.28), lineWidth: 1.2)
+
+                Circle()
+                    .inset(by: 4)
+                    .stroke(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.72),
+                                Color.white.opacity(0.08),
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            }
+            .shadow(color: Color.black.opacity(0.22), radius: 26, y: 14)
+        }
+    }
+}
+
+private struct MicWaterFillShape: Shape {
+    let level: CGFloat
+    let phase: Double
+    let amplitude: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        let clampedLevel = min(max(level, 0), 1)
+        let waterY = rect.maxY - rect.height * clampedLevel
+        let waveAmplitude = amplitude * max(0.2, clampedLevel)
+        let step = max(rect.width / 28, 4)
+
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: waterY))
+
+        var x = rect.minX
+        while x <= rect.maxX + step {
+            let relativeX = (x - rect.minX) / max(rect.width, 1)
+            let sine = sin(relativeX * .pi * 2.6 + phase * 2.2)
+            let y = waterY + sine * waveAmplitude
+            path.addLine(to: CGPoint(x: x, y: y))
+            x += step
+        }
+
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.closeSubpath()
+        return path
+    }
+}
+
+private struct HumWaveformView: View {
+    let levels: [CGFloat]
+    let maxHeight: CGFloat
+    let barWidth: CGFloat
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 4) {
+            ForEach(Array(levels.enumerated()), id: \.offset) { _, level in
+                let clampedLevel = min(max(level, 0), 1)
+                let visualLevel = CGFloat(pow(Double(clampedLevel), 0.82))
+
+                Capsule(style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.92),
+                                Color(red: 0.72, green: 0.90, blue: 1.00).opacity(0.74),
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(
+                        width: barWidth,
+                        height: min(maxHeight, 8 + visualLevel * (maxHeight - 8))
+                    )
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+        .animation(.interactiveSpring(response: 0.18, dampingFraction: 0.78), value: levels)
+    }
+}
+
+private struct HumAnalysisView: View {
+    var body: some View {
+        TimelineView(.animation) { timeline in
+            let phase = timeline.date.timeIntervalSinceReferenceDate
+            let scanOffset = sin(phase * 1.2) * 20
+
+            ZStack {
+                HStack(alignment: .center, spacing: 7) {
+                    ForEach(0..<11, id: \.self) { index in
+                        let sample = (sin(phase * 2.1 + Double(index) * 0.72) + 1) * 0.5
+
+                        Capsule(style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color.white.opacity(0.94),
+                                        Color(red: 0.68, green: 0.89, blue: 1.0).opacity(0.58),
+                                    ],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                            .frame(width: 5, height: 12 + sample * 28)
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+
+                Rectangle()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.clear,
+                                Color.white.opacity(0.80),
+                                Color.clear,
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(height: 2)
+                    .blur(radius: 0.8)
+                    .offset(y: scanOffset)
+            }
+        }
+    }
+}
+
+private enum HumHaptics {
+    static func beginHold() {
+        Task { @MainActor in
+            let generator = UIImpactFeedbackGenerator(style: .soft)
+            generator.prepare()
+            generator.impactOccurred(intensity: 0.72)
+        }
+    }
+
+    static func fillStep() {
+        Task { @MainActor in
+            UISelectionFeedbackGenerator().selectionChanged()
+        }
+    }
+
+    static func recordingStarted() {
+        Task { @MainActor in
+            let generator = UIImpactFeedbackGenerator(style: .rigid)
+            generator.prepare()
+            generator.impactOccurred(intensity: 0.95)
+        }
+    }
+
+    static func recordingEnded() {
+        Task { @MainActor in
+            let generator = UIImpactFeedbackGenerator(style: .soft)
+            generator.prepare()
+            generator.impactOccurred(intensity: 0.9)
+        }
+    }
+
+    static func reveal() {
+        Task { @MainActor in
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        }
+    }
+
+    static func warning() {
+        Task { @MainActor in
+            UINotificationFeedbackGenerator().notificationOccurred(.warning)
         }
     }
 }
@@ -544,31 +2014,33 @@ private struct TankComposerScreen: View {
         )
     }
 
-    private var previewHeroHeight: CGFloat {
-        min(max(UIScreen.main.bounds.width * 0.92, 360), 420)
+    private func previewHeroHeight(for width: CGFloat) -> CGFloat {
+        min(max(width * 0.92, 360), 420)
     }
 
     var body: some View {
         NavigationStack {
-            ZStack {
-                AmbientScreenBackdrop(
-                    configuration: draft.configuration,
-                    renderStyle: .lightweight
-                )
+            GeometryReader { geometry in
+                ZStack {
+                    AmbientScreenBackdrop(
+                        configuration: draft.configuration,
+                        renderStyle: .lightweight
+                    )
 
-                ScrollView(.vertical, showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 22) {
-                        composerHeader
-                        previewSection
-                        detailsSection
-                        controlsSection
+                    ScrollView(.vertical, showsIndicators: false) {
+                        VStack(alignment: .leading, spacing: 22) {
+                            composerHeader
+                            previewSection(heroHeight: previewHeroHeight(for: geometry.size.width))
+                            detailsSection
+                            controlsSection
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.top, 16)
+                        .padding(.bottom, 34)
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 16)
-                    .padding(.bottom, 34)
                 }
+                .navigationBarHidden(true)
             }
-            .navigationBarHidden(true)
         }
         .sheet(isPresented: $isPremiumSheetPresented) {
             PremiumUnlockSheet(store: premiumStore)
@@ -676,7 +2148,7 @@ private struct TankComposerScreen: View {
     }
 
     @ViewBuilder
-    private var previewSection: some View {
+    private func previewSection(heroHeight: CGFloat) -> some View {
         GlassPanel(cornerRadius: 34) {
             VStack(alignment: .leading, spacing: 18) {
                 Group {
@@ -689,7 +2161,7 @@ private struct TankComposerScreen: View {
                             petSnapshot: draft.petSnapshot(at: .now)
                         )
                         .frame(maxWidth: .infinity)
-                        .frame(height: previewHeroHeight)
+                        .frame(height: heroHeight)
                         .drawingGroup(opaque: false)
                     default:
                         WidgetSizePreview(
@@ -1236,10 +2708,6 @@ private struct TankDetailCard: View {
 
     let profile: BowlProfile
 
-    private var maxCardWidth: CGFloat {
-        min(max(320, UIScreen.main.bounds.width - 56), 360)
-    }
-
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
@@ -1263,7 +2731,7 @@ private struct TankDetailCard: View {
 
             Spacer(minLength: 0)
         }
-        .frame(maxWidth: maxCardWidth, alignment: .leading)
+        .frame(maxWidth: 360, alignment: .leading)
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
         .background {
