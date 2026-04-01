@@ -252,15 +252,17 @@ private struct AquariumInteriorView: View {
                     ForEach(Array(layouts.enumerated()), id: \.offset) { _, layout in
                         FishSprite(
                             species: layout.species,
-                            isMirrored: layout.isMirrored,
                             vitality: petSnapshot.colorStrength,
-                            isAlive: petSnapshot.isAlive
+                            isAlive: petSnapshot.isAlive,
+                            bodyOvalScaleY: petSnapshot.bodyOvalScaleY
                         )
                         .scaleEffect(layout.spriteScale)
                         .frame(
                             width: layout.size.width,
                             height: layout.size.height
                         )
+                        .drawingGroup()
+                        .scaleEffect(x: layout.isMirrored ? -1 : 1, y: 1)
                         .rotationEffect(.degrees(layout.rotation))
                         .position(layout.position)
                         .opacity(petSnapshot.isAlive ? 1 : 0.62)
@@ -316,8 +318,8 @@ private struct AquariumInteriorView: View {
         let baseY: [CGFloat]
         let scales: [CGFloat]
         let foodResponse = foodResponse(in: size)
-        let laneWidth = size.width * (isCompactFormat ? 0.068 : (isAppIconFormat ? 0.060 : 0.086)) * personality.horizontalRangeMultiplier
-        let verticalRange = size.height * (isCompactFormat ? 0.038 : (isAppIconFormat ? 0.034 : 0.048)) * personality.verticalRangeMultiplier
+        let laneWidth = size.width * (isCompactFormat ? 0.076 : (isAppIconFormat ? 0.064 : 0.096)) * personality.horizontalRangeMultiplier
+        let verticalRange = size.height * (isCompactFormat ? 0.044 : (isAppIconFormat ? 0.038 : 0.058)) * personality.verticalRangeMultiplier
 
         switch count {
         case 1:
@@ -344,10 +346,12 @@ private struct AquariumInteriorView: View {
             let species = speciesLineup[index]
             let spriteScale = visualSpriteScale(for: species)
             let motionScale = personality.motionScale * sceneTone.motionScale
-            let cruisePhase = phase * motionScale * (0.46 + Double(index) * 0.05) + Double(index) * 1.7
-            let meanderPhase = phase * motionScale * (0.92 + Double(index) * 0.07) + Double(index) * 2.4
-            let bobPhase = phase * motionScale * (0.74 + Double(index) * 0.06) + Double(index) * 1.2
-            let tiltPhase = phase * motionScale * (1.16 + Double(index) * 0.04) + Double(index) * 0.9
+            let burstPulse = 0.86 + 0.44 * pow(max(0, sin(phase * 0.62 + Double(index) * 1.9)), 2)
+            let effectiveMotionScale = motionScale * burstPulse
+            let cruisePhase = phase * effectiveMotionScale * (0.50 + Double(index) * 0.06) + Double(index) * 1.7
+            let meanderPhase = phase * effectiveMotionScale * (1.02 + Double(index) * 0.09) + Double(index) * 2.4
+            let bobPhase = phase * effectiveMotionScale * (0.82 + Double(index) * 0.07) + Double(index) * 1.2
+            let tiltPhase = phase * effectiveMotionScale * (1.28 + Double(index) * 0.05) + Double(index) * 0.9
             let driftScale = petSnapshot.driftIntensity * personality.driftIntensityMultiplier
             let sweep = CGFloat(sin(cruisePhase) * 0.74 + sin(meanderPhase) * 0.26)
             let bob = CGFloat(sin(bobPhase) * 0.76 + cos(tiltPhase) * 0.24)
@@ -355,8 +359,8 @@ private struct AquariumInteriorView: View {
                 x: size.width * baseX[index] + sweep * laneWidth * driftScale,
                 y: size.height * baseY[index] + bob * verticalRange * driftScale
             )
-            let width = size.width * scales[index] * formatScale * petSnapshot.bodyScaleX
-            let height = width * 0.72 * petSnapshot.bodyScaleY
+            let width = size.width * scales[index] * formatScale
+            let height = width * 0.72
             let idleHeading = cos(cruisePhase) * 0.72 + cos(meanderPhase) * 0.28
             let foodInterest = foodResponse.map { response in
                 min(0.96, interestStrength(response.strength, index: index, count: count) * personality.foodInterestMultiplier)
@@ -698,15 +702,34 @@ private struct AquariumInteriorView: View {
             rotationStrength = 1.8
         }
 
+        let renderSize = companionRenderSize(for: style, in: size)
+        let proposedPosition = CGPoint(
+            x: size.width * metrics.baseX + slotOffset * size.width * 0.16 + horizontalDrift * size.width * metrics.range,
+            y: size.height * metrics.baseY - lift
+        )
+
         return CompanionLayout(
             style: style,
-            position: CGPoint(
-                x: size.width * metrics.baseX + slotOffset * size.width * 0.16 + horizontalDrift * size.width * metrics.range,
-                y: size.height * metrics.baseY - lift
-            ),
-            renderSize: companionRenderSize(for: style, in: size),
+            position: clampedCompanionPosition(proposedPosition, renderSize: renderSize, in: size),
+            renderSize: renderSize,
             isMirrored: isMirrored,
             rotation: Double(horizontalDrift * rotationStrength)
+        )
+    }
+
+    private func clampedCompanionPosition(_ position: CGPoint, renderSize: CGSize, in size: CGSize) -> CGPoint {
+        let normalizedY = min(max(position.y / max(size.height, 1), 0), 1)
+        let orbCurveBoost = configuration.vesselStyle == .orb
+        ? abs(normalizedY - 0.52) * size.width * 0.15
+        : 0
+        let sidePadding: CGFloat = configuration.vesselStyle == .orb ? 6 : 4
+        let xMargin = renderSize.width * 0.5 + sidePadding + orbCurveBoost
+        let minY = renderSize.height * 0.5 + 2
+        let maxY = size.height - renderSize.height * 0.42
+
+        return CGPoint(
+            x: min(max(position.x, xMargin), size.width - xMargin),
+            y: min(max(position.y, minY), maxY)
         )
     }
 
@@ -1340,9 +1363,9 @@ private struct FoodPelletField: View {
 
 private struct FishSprite: View {
     let species: FishSpecies
-    let isMirrored: Bool
     let vitality: Double
     let isAlive: Bool
+    let bodyOvalScaleY: CGFloat
 
     var body: some View {
         let tailWidth = species.bodyWidth * 0.92 * species.tailScale
@@ -1378,7 +1401,7 @@ private struct FishSprite: View {
                                 endPoint: .bottomTrailing
                             )
                         )
-                        .frame(width: species.bodyWidth, height: species.bodyHeight)
+                        .frame(width: species.bodyWidth, height: species.bodyHeight * bodyOvalScaleY)
                         .overlay {
                             Ellipse()
                                 .stroke(Color.white.opacity(0.28), lineWidth: 0.9)
@@ -1452,7 +1475,6 @@ private struct FishSprite: View {
                     }
         }
         .saturation(isAlive ? 0.58 + vitality * 0.42 : 0.12)
-        .scaleEffect(x: isMirrored ? -1 : 1, y: 1)
     }
 }
 
@@ -3099,7 +3121,7 @@ private final class AquariumSpriteScene: SKScene {
     private var bubbleNodes: [SKSpriteNode] = []
     private var pelletNodes: [SKSpriteNode] = []
     private var rippleNodes: [AquariumSpriteRippleNode] = []
-    private var fishNodes: [SKSpriteNode] = []
+    private var fishNodes: [SKNode] = []
     private var burstShockwaveNodes: [SKSpriteNode] = []
     private var companionNodes: [SKSpriteNode] = []
     private var visitorNode: SKSpriteNode?
@@ -3117,6 +3139,9 @@ private final class AquariumSpriteScene: SKScene {
     private var activeBurstAnimation: BurstAnimationState?
     private var lastRenderedFishVisuals: [BurstFishVisual] = []
     private var onFeedBurstConsumed: AquariumFeedBurstConsumedHandler
+
+    private static let fishSpriteChildName = "fishSprite"
+    private static let fishVerticalStretchNodeName = "fishVerticalStretch"
 
     init(
         profile: BowlProfile,
@@ -3301,9 +3326,9 @@ private final class AquariumSpriteScene: SKScene {
                     return makeTexture(size: canvas, scale: resolvedScale, content: {
                         FishSprite(
                             species: species,
-                            isMirrored: false,
                             vitality: 1,
-                            isAlive: true
+                            isAlive: true,
+                            bodyOvalScaleY: 1
                         )
                         .frame(width: canvas.width, height: canvas.height)
                     })
@@ -3611,25 +3636,38 @@ private final class AquariumSpriteScene: SKScene {
         snapshot: AquariumPetSnapshot
     ) {
         syncNodeCount(&fishNodes, desiredCount: layouts.count) {
-            let node = SKSpriteNode(color: .clear, size: .zero)
-            node.zPosition = 32
-            return node
+            let root = SKNode()
+            root.zPosition = 32
+            let vertical = SKNode()
+            vertical.name = Self.fishVerticalStretchNodeName
+            let sprite = SKSpriteNode(color: .clear, size: .zero)
+            sprite.name = Self.fishSpriteChildName
+            vertical.addChild(sprite)
+            root.addChild(vertical)
+            return root
         }
 
         for (index, layout) in layouts.enumerated() {
-            let node = fishNodes[index]
+            let root = fishNodes[index]
+            guard let vertical = root.childNode(withName: Self.fishVerticalStretchNodeName) else { continue }
+            guard let sprite = vertical.childNode(withName: Self.fishSpriteChildName) as? SKSpriteNode else { continue }
             let frame = resolver.fishRenderRect(for: layout)
             let center = CGPoint(x: frame.midX, y: frame.midY)
-            node.texture = fishTextures[layout.species]
-            node.position = scenePoint(from: center)
-            node.size = frame.size
-            node.zRotation = -CGFloat(layout.rotation) * .pi / 180
-            node.alpha = snapshot.isAlive ? 1 : 0.62
-            node.color = UIColor(white: snapshot.colorStrength, alpha: 1)
-            node.colorBlendFactor = snapshot.isAlive ? 0 : 0.18
-            node.xScale = layout.isMirrored ? -1 : 1
-            node.yScale = 1
-            node.isHidden = false
+            root.position = scenePoint(from: center)
+            root.zRotation = -CGFloat(layout.rotation) * .pi / 180
+            root.isHidden = false
+            vertical.xScale = 1
+            vertical.yScale = snapshot.bodyOvalScaleY
+            sprite.texture = fishTextures[layout.species]
+            sprite.position = .zero
+            sprite.zRotation = 0
+            sprite.size = frame.size
+            sprite.alpha = snapshot.isAlive ? 1 : 0.62
+            sprite.color = UIColor(white: snapshot.colorStrength, alpha: 1)
+            sprite.colorBlendFactor = snapshot.isAlive ? 0 : 0.18
+            sprite.xScale = layout.isMirrored ? -1 : 1
+            sprite.yScale = 1
+            sprite.isHidden = false
         }
     }
 
@@ -3665,37 +3703,50 @@ private final class AquariumSpriteScene: SKScene {
         snapshot: AquariumPetSnapshot
     ) {
         syncNodeCount(&fishNodes, desiredCount: state.fishVisuals.count) {
-            let node = SKSpriteNode(color: .clear, size: .zero)
-            node.zPosition = 32
-            return node
+            let root = SKNode()
+            root.zPosition = 32
+            let vertical = SKNode()
+            vertical.name = Self.fishVerticalStretchNodeName
+            let sprite = SKSpriteNode(color: .clear, size: .zero)
+            sprite.name = Self.fishSpriteChildName
+            vertical.addChild(sprite)
+            root.addChild(vertical)
+            return root
         }
 
         let inflatePhase = smoothStep(from: 0.0, to: 0.22, value: progress)
         let vanishPhase = smoothStep(from: 0.14, to: 0.96, value: progress)
 
         for (index, visual) in state.fishVisuals.enumerated() {
-            let node = fishNodes[index]
-            node.texture = fishTextures[visual.species]
-            node.position = visual.scenePosition
-            node.zRotation = visual.rotation
-            node.xScale = visual.isMirrored ? -1 : 1
+            let root = fishNodes[index]
+            guard let vertical = root.childNode(withName: Self.fishVerticalStretchNodeName) else { continue }
+            guard let sprite = vertical.childNode(withName: Self.fishSpriteChildName) as? SKSpriteNode else { continue }
+            root.position = visual.scenePosition
+            root.zRotation = visual.rotation
+            root.isHidden = false
+            vertical.xScale = 1
+            vertical.yScale = snapshot.bodyOvalScaleY
+            sprite.texture = fishTextures[visual.species]
+            sprite.position = .zero
+            sprite.zRotation = 0
+            sprite.xScale = visual.isMirrored ? -1 : 1
+            sprite.yScale = 1
 
             let widthScale = 1 + inflatePhase * 0.16 + vanishPhase * 0.44
             let heightScale = 1 + inflatePhase * 0.22 + vanishPhase * 0.30
-            node.size = CGSize(
+            sprite.size = CGSize(
                 width: visual.renderSize.width * widthScale,
                 height: visual.renderSize.height * heightScale
             )
-            node.alpha = max(0, 1 - vanishPhase * 1.18)
-            node.color = UIColor(
+            sprite.alpha = max(0, 1 - vanishPhase * 1.18)
+            sprite.color = UIColor(
                 red: 1.0,
                 green: 0.96 - CGFloat(progress) * 0.18,
                 blue: 0.92 - CGFloat(progress) * 0.34,
                 alpha: 1
             )
-            node.colorBlendFactor = 0.08 + vanishPhase * 0.54
-            node.yScale = 1
-            node.isHidden = node.alpha <= 0.01
+            sprite.colorBlendFactor = 0.08 + vanishPhase * 0.54
+            sprite.isHidden = sprite.alpha <= 0.01
         }
 
         while fishNodes.count > state.fishVisuals.count {
@@ -4319,13 +4370,21 @@ private final class AquariumMetalCoordinator: NSObject, MTKViewDelegate {
         for layout in resolver.fishLayouts() {
             guard let texture = fishTextures[layout.species] else { continue }
             let frame = resolver.fishRenderRect(for: layout)
+            let ovalScaleY = max(0.5, min(1.8, CGFloat(snapshot.bodyOvalScaleY)))
+            let adjustedHeight = frame.height * ovalScaleY
+            let adjustedFrame = CGRect(
+                x: frame.minX,
+                y: frame.midY - adjustedHeight * 0.5,
+                width: frame.width,
+                height: adjustedHeight
+            )
             let alpha: Float = snapshot.isAlive ? 1 : 0.62
             let tintStrength = Float(snapshot.colorStrength)
             drawQuad(
                 encoder: encoder,
                 texture: texture,
                 maskTexture: whiteMaskTexture,
-                frame: frame,
+                frame: adjustedFrame,
                 rotation: CGFloat(layout.rotation) * .pi / 180,
                 mirrored: layout.isMirrored,
                 tint: SIMD4(tintStrength, tintStrength, tintStrength, alpha)
@@ -4436,9 +4495,9 @@ private final class AquariumMetalCoordinator: NSObject, MTKViewDelegate {
             if let texture = makeTexture(size: canvas, scale: scale, content: {
                 FishSprite(
                     species: species,
-                    isMirrored: false,
                     vitality: 1,
-                    isAlive: true
+                    isAlive: true,
+                    bodyOvalScaleY: 1
                 )
                 .frame(width: canvas.width, height: canvas.height)
             }) {
@@ -4828,8 +4887,8 @@ private struct AquariumMetalMotionResolver {
         let baseY: [CGFloat]
         let scales: [CGFloat]
         let foodResponse = foodResponse()
-        let laneWidth = size.width * (isCompactFormat ? 0.068 : (isAppIconFormat ? 0.060 : 0.086)) * personality.horizontalRangeMultiplier
-        let verticalRange = size.height * (isCompactFormat ? 0.038 : (isAppIconFormat ? 0.034 : 0.048)) * personality.verticalRangeMultiplier
+        let laneWidth = size.width * (isCompactFormat ? 0.076 : (isAppIconFormat ? 0.064 : 0.096)) * personality.horizontalRangeMultiplier
+        let verticalRange = size.height * (isCompactFormat ? 0.044 : (isAppIconFormat ? 0.038 : 0.058)) * personality.verticalRangeMultiplier
 
         switch count {
         case 1:
@@ -4856,10 +4915,12 @@ private struct AquariumMetalMotionResolver {
             let species = speciesLineup[index]
             let spriteScale = visualSpriteScale(for: species)
             let motionScale = personality.motionScale * tone.motionScale
-            let cruisePhase = phase * motionScale * (0.46 + Double(index) * 0.05) + Double(index) * 1.7
-            let meanderPhase = phase * motionScale * (0.92 + Double(index) * 0.07) + Double(index) * 2.4
-            let bobPhase = phase * motionScale * (0.74 + Double(index) * 0.06) + Double(index) * 1.2
-            let tiltPhase = phase * motionScale * (1.16 + Double(index) * 0.04) + Double(index) * 0.9
+            let burstPulse = 0.86 + 0.44 * pow(max(0, sin(phase * 0.62 + Double(index) * 1.9)), 2)
+            let effectiveMotionScale = motionScale * burstPulse
+            let cruisePhase = phase * effectiveMotionScale * (0.50 + Double(index) * 0.06) + Double(index) * 1.7
+            let meanderPhase = phase * effectiveMotionScale * (1.02 + Double(index) * 0.09) + Double(index) * 2.4
+            let bobPhase = phase * effectiveMotionScale * (0.82 + Double(index) * 0.07) + Double(index) * 1.2
+            let tiltPhase = phase * effectiveMotionScale * (1.28 + Double(index) * 0.05) + Double(index) * 0.9
             let driftScale = petSnapshot.driftIntensity * personality.driftIntensityMultiplier
             let sweep = CGFloat(sin(cruisePhase) * 0.74 + sin(meanderPhase) * 0.26)
             let bob = CGFloat(sin(bobPhase) * 0.76 + cos(tiltPhase) * 0.24)
@@ -4867,8 +4928,8 @@ private struct AquariumMetalMotionResolver {
                 x: size.width * baseX[index] + sweep * laneWidth * driftScale,
                 y: size.height * baseY[index] + bob * verticalRange * driftScale
             )
-            let width = size.width * scales[index] * formatScale * petSnapshot.bodyScaleX
-            let height = width * 0.72 * petSnapshot.bodyScaleY
+            let width = size.width * scales[index] * formatScale
+            let height = width * 0.72
             let idleHeading = cos(cruisePhase) * 0.72 + cos(meanderPhase) * 0.28
             let foodInterest = foodResponse.map {
                 min(0.96, interestStrength($0.strength, index: index, count: count) * personality.foodInterestMultiplier)
@@ -5050,15 +5111,34 @@ private struct AquariumMetalMotionResolver {
             rotationStrength = 1.8
         }
 
+        let renderSize = companionRenderSize(for: style)
+        let proposedPosition = CGPoint(
+            x: size.width * metrics.baseX + slotOffset * size.width * 0.16 + horizontalDrift * size.width * metrics.range,
+            y: size.height * metrics.baseY - lift
+        )
+
         return CompanionLayout(
             style: style,
-            position: CGPoint(
-                x: size.width * metrics.baseX + slotOffset * size.width * 0.16 + horizontalDrift * size.width * metrics.range,
-                y: size.height * metrics.baseY - lift
-            ),
-            renderSize: companionRenderSize(for: style),
+            position: clampedCompanionPosition(proposedPosition, renderSize: renderSize),
+            renderSize: renderSize,
             isMirrored: isMirrored,
             rotation: Double(horizontalDrift * rotationStrength)
+        )
+    }
+
+    private func clampedCompanionPosition(_ position: CGPoint, renderSize: CGSize) -> CGPoint {
+        let normalizedY = min(max(position.y / max(size.height, 1), 0), 1)
+        let orbCurveBoost = configuration.vesselStyle == .orb
+        ? abs(normalizedY - 0.52) * size.width * 0.15
+        : 0
+        let sidePadding: CGFloat = configuration.vesselStyle == .orb ? 6 : 4
+        let xMargin = renderSize.width * 0.5 + sidePadding + orbCurveBoost
+        let minY = renderSize.height * 0.5 + 2
+        let maxY = size.height - renderSize.height * 0.42
+
+        return CGPoint(
+            x: min(max(position.x, xMargin), size.width - xMargin),
+            y: min(max(position.y, minY), maxY)
         )
     }
 

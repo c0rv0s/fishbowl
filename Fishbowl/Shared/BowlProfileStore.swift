@@ -89,19 +89,22 @@ struct AquariumPetSnapshot: Hashable, Sendable {
     }
 
     var bodyScaleX: CGFloat {
-        if !isAlive {
-            return 0.86
-        }
-
-        return 0.88 + CGFloat(vitality) * 0.12 + visibleFullness * 0.24
+        1
     }
 
     var bodyScaleY: CGFloat {
-        if !isAlive {
-            return 0.64
+        1
+    }
+
+    var bodyOvalScaleY: CGFloat {
+        if !isAlive { return 0.5 }
+
+        if mood == .stuffed {
+            return min(1.8, 1.2 + visibleFullness * 0.6)
         }
 
-        return 0.72 + CGFloat(vitality) * 0.28 + visibleFullness * 0.34
+        let hunger = min(max(CGFloat(hungerProgress), 0), 1)
+        return max(0.5, 1 - hunger * 0.5)
     }
 
     var colorStrength: Double {
