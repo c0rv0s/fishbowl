@@ -443,8 +443,8 @@ private struct AddTankPage: View {
                                     resetCreationFlow(clearStatus: false)
                                 }
                             }
-                            .padding(.top, max(18, safeAreaInsets.top + 6))
-                            .padding(.horizontal, 22)
+                            .padding(.top, stage == .preview ? 12 : max(18, safeAreaInsets.top + 6))
+                            .padding(.horizontal, stage == .preview ? 14 : 22)
 
                             Spacer()
                         }
@@ -591,26 +591,36 @@ private struct AddTankPage: View {
 
     @ViewBuilder
     private func previewLayer(for generatedDraft: HumGeneratedBowl, in size: CGSize) -> some View {
-        VStack(spacing: 22) {
-            Spacer(minLength: max(34, safeAreaInsets.top + 18))
+        let isCompact = size.height < 760
+        let verticalSpacing: CGFloat = isCompact ? 14 : 22
+        let headerSpacing: CGFloat = isCompact ? 7 : 10
+        let topSpacer = max(isCompact ? 28 : 34, safeAreaInsets.top + (isCompact ? 8 : 18))
+        let heroHeight = min(size.height * (isCompact ? 0.38 : 0.46), isCompact ? 300 : 390)
+        let bottomSpacer = max(isCompact ? 12 : 22, safeAreaInsets.bottom + (isCompact ? 6 : 12))
 
-            VStack(alignment: .leading, spacing: 10) {
+        VStack(spacing: verticalSpacing) {
+            Spacer(minLength: topSpacer)
+
+            VStack(alignment: .leading, spacing: headerSpacing) {
                 Text(generatedDraft.profile.name)
-                    .font(.system(size: 42, weight: .medium, design: .serif))
+                    .font(.system(size: isCompact ? 34 : 42, weight: .medium, design: .serif))
                     .foregroundStyle(colorScheme.fishbowlPrimaryText)
                     .lineLimit(2)
+                    .minimumScaleFactor(0.84)
 
                 Text(generatedDraft.analysis.headline)
-                    .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    .font(.system(size: isCompact ? 15 : 17, weight: .semibold, design: .rounded))
                     .foregroundStyle(Color.white.opacity(0.82))
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.9)
 
                 Text(generatedDraft.analysis.detailLine)
-                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                    .font(.system(size: isCompact ? 13 : 14, weight: .medium, design: .rounded))
                     .foregroundStyle(Color.white.opacity(0.66))
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 28)
+            .padding(.horizontal, isCompact ? 22 : 28)
 
             AquariumSceneView(
                 configuration: generatedDraft.profile.configuration,
@@ -618,18 +628,18 @@ private struct AddTankPage: View {
                 phase: Date.now.timeIntervalSinceReferenceDate / 5.4,
                 petSnapshot: generatedDraft.profile.petSnapshot(at: .now)
             )
-            .frame(height: min(size.height * 0.46, 390))
-            .padding(.horizontal, 18)
+            .frame(height: heroHeight)
+            .padding(.horizontal, isCompact ? 22 : 18)
             .drawingGroup(opaque: false)
 
             GlassPanel(cornerRadius: 34, showsGlassEffect: false) {
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: isCompact ? 10 : 14) {
                     Text(generatedDraft.profile.configuration.descriptor)
-                        .font(.system(size: 24, weight: .semibold, design: .serif))
+                        .font(.system(size: isCompact ? 21 : 24, weight: .semibold, design: .serif))
                         .foregroundStyle(colorScheme.fishbowlPrimaryText)
 
                     Text(generatedDraft.profile.configuration.detailLine)
-                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .font(.system(size: isCompact ? 13 : 14, weight: .medium, design: .rounded))
                         .foregroundStyle(colorScheme.fishbowlSecondaryText)
                         .fixedSize(horizontal: false, vertical: true)
 
@@ -644,7 +654,7 @@ private struct AddTankPage: View {
                                 .foregroundStyle(Color.white.opacity(0.96))
                         }
                         .padding(.horizontal, 14)
-                        .padding(.vertical, 12)
+                        .padding(.vertical, isCompact ? 10 : 12)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(
                             RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -658,27 +668,29 @@ private struct AddTankPage: View {
                         VStack(alignment: .leading, spacing: 10) {
                             HStack(spacing: 10) {
                                 Image(systemName: "crown.fill")
-                                    .font(.system(size: 16, weight: .semibold))
+                                    .font(.system(size: isCompact ? 15 : 16, weight: .semibold))
                                     .foregroundStyle(Color(red: 0.86, green: 0.72, blue: 0.24))
 
                                 Text("Unlock Premium To Keep This Bowl")
-                                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                    .font(.system(size: isCompact ? 14 : 15, weight: .semibold, design: .rounded))
                                     .foregroundStyle(colorScheme.fishbowlPrimaryText)
+                                    .lineLimit(2)
+                                    .minimumScaleFactor(0.88)
                             }
 
-                            Text("This reveal is the hard gate. Premium lets you save hum-made bowls and keep generating new ones from your voice.")
-                                .font(.system(size: 14, weight: .medium, design: .rounded))
+                            Text("Save this bowl as a pet and unlock more fish, bowls, and customization.")
+                                .font(.system(size: isCompact ? 13 : 14, weight: .medium, design: .rounded))
                                 .foregroundStyle(colorScheme.fishbowlSecondaryText)
                                 .fixedSize(horizontal: false, vertical: true)
 
                             Button {
                                 isPremiumSheetPresented = true
                             } label: {
-                                Text(premiumStore.purchaseButtonTitle)
-                                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+                                Text("View All Benefits")
+                                    .font(.system(size: isCompact ? 15 : 16, weight: .semibold, design: .rounded))
                                     .foregroundStyle(Color.white)
                                     .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 15)
+                                    .padding(.vertical, isCompact ? 13 : 15)
                                     .background(
                                         RoundedRectangle(cornerRadius: 22, style: .continuous)
                                             .fill(
@@ -698,9 +710,9 @@ private struct AddTankPage: View {
                     }
                 }
             }
-            .padding(.horizontal, 22)
+            .padding(.horizontal, isCompact ? 18 : 22)
 
-            Spacer(minLength: max(22, safeAreaInsets.bottom + 12))
+            Spacer(minLength: bottomSpacer)
         }
         .contentShape(Rectangle())
         .onTapGesture {
@@ -2013,7 +2025,7 @@ private struct PremiumUpsellPage: View {
                 Spacer(minLength: max(36, safeAreaInsets.top + 22))
 
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Fishbowl Premium")
+                    Text("Glass Premium")
                         .font(.system(size: 44, weight: .medium, design: .serif))
                         .foregroundStyle(colorScheme.fishbowlPrimaryText)
 
@@ -3346,7 +3358,7 @@ private struct PremiumUnlockSheet: View {
                         GlassPanel(cornerRadius: 34, showsGlassEffect: false) {
                             VStack(alignment: .leading, spacing: 14) {
                                 HStack {
-                                    Text("Fishbowl Premium")
+                                    Text("Glass Premium")
                                         .font(.system(size: 36, weight: .medium, design: .serif))
                                         .foregroundStyle(colorScheme.fishbowlPrimaryText)
 

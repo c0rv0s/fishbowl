@@ -438,7 +438,6 @@ enum BowlRepository {
     static let storageMaxProfiles = 12
     private static let profilesKey = "fishbowl.savedProfiles"
     private static let selectedProfileKey = "fishbowl.selectedProfileID"
-    private static let didMigrateEmptyStartKey = "fishbowl.didMigrateEmptyStart"
 
     private static var encoder: JSONEncoder {
         let encoder = JSONEncoder()
@@ -460,23 +459,24 @@ enum BowlRepository {
         let defaults = defaults()
 
         guard let data = defaults.data(forKey: profilesKey) else {
-            return []
+            let starterProfiles = defaultProfiles()
+            saveProfiles(starterProfiles)
+            return starterProfiles
         }
 
         guard let profiles = try? decoder.decode([BowlProfile].self, from: data) else {
-            return []
+            let starterProfiles = defaultProfiles()
+            saveProfiles(starterProfiles)
+            return starterProfiles
         }
 
         let normalizedProfiles = normalizeProfiles(profiles)
-        let migratedProfiles = migrateSeedProfilesIfNeeded(normalizedProfiles)
 
-        if migratedProfiles != profiles {
-            saveProfiles(migratedProfiles)
-        } else if normalizedProfiles != profiles {
+        if normalizedProfiles != profiles {
             saveProfiles(normalizedProfiles)
         }
 
-        return migratedProfiles
+        return normalizedProfiles
     }
 
     static func saveProfiles(_ profiles: [BowlProfile]) {
@@ -521,13 +521,7 @@ enum BowlRepository {
     static func defaultProfiles(referenceDate: Date = .now) -> [BowlProfile] {
         [
             BowlProfile(
-                name: "Blue Bowl",
-                configuration: .hero,
-                mode: .decorative,
-                petState: .fresh(at: referenceDate)
-            ),
-            BowlProfile(
-                name: "Soft Glow",
+                name: "My First Fish",
                 configuration: AquariumConfiguration(
                     vesselStyle: .gallery,
                     fishSpecies: .royalBetta,
@@ -537,22 +531,8 @@ enum BowlRepository {
                     decoration: .riverRocks,
                     featurePiece: .none
                 ),
-                mode: .decorative,
-                petState: .fresh(at: referenceDate)
-            ),
-            BowlProfile(
-                name: "Moon Tank",
-                configuration: AquariumConfiguration(
-                    vesselStyle: .panorama,
-                    fishSpecies: .moonKoi,
-                    fishCount: .duet,
-                    companion: .shrimp,
-                    substrate: .moonGravel,
-                    decoration: .riverRocks,
-                    featurePiece: .moonLantern
-                ),
                 mode: .pet,
-                petState: .fresh(at: referenceDate.addingTimeInterval(-6 * 60 * 60))
+                petState: .fresh(at: referenceDate)
             ),
         ]
     }
@@ -565,58 +545,28 @@ enum BowlRepository {
                     if profile.name == "Pet Tank" {
                         profile.name = "Moon Tank"
                     }
+                    if profile.name == "Blue Bowl" {
+                        profile.name = "My First Fish"
+                        profile.configuration = AquariumConfiguration(
+                            vesselStyle: .gallery,
+                            fishSpecies: .royalBetta,
+                            fishCount: .solo,
+                            companion: .none,
+                            substrate: .pearlSand,
+                            decoration: .riverRocks,
+                            featurePiece: .none
+                        )
+                        profile.mode = .pet
+                        if profile.petState.feedCount == 0 {
+                            profile.petState = .fresh()
+                        }
+                    }
                     return profile
                 }
                 .prefix(storageMaxProfiles)
         )
     }
 
-    private static func migrateSeedProfilesIfNeeded(_ profiles: [BowlProfile]) -> [BowlProfile] {
-        let defaults = defaults()
-        if defaults.bool(forKey: didMigrateEmptyStartKey) {
-            return profiles
-        }
-
-        defer {
-            defaults.set(true, forKey: didMigrateEmptyStartKey)
-        }
-
-        let seededSignatures = Set(
-            defaultProfiles().map { profile in
-                SeedSignature(
-                    name: profile.name,
-                    configuration: profile.configuration,
-                    mode: profile.mode
-                )
-            }
-        )
-
-        let legacySignatures = Set(
-            defaultProfiles().map { profile in
-                SeedSignature(
-                    name: profile.name == "Moon Tank" ? "Pet Tank" : profile.name,
-                    configuration: profile.configuration,
-                    mode: profile.mode
-                )
-            }
-        )
-
-        let loadedSignatures = Set(
-            profiles.map { profile in
-                SeedSignature(
-                    name: profile.name,
-                    configuration: profile.configuration,
-                    mode: profile.mode
-                )
-            }
-        )
-
-        if loadedSignatures == seededSignatures || loadedSignatures == legacySignatures {
-            return []
-        }
-
-        return profiles
-    }
 }
 
 enum PremiumAccess {
@@ -655,12 +605,6 @@ enum PremiumAccess {
         BowlRepository.defaults().set(unlocked, forKey: previewUnlockKey)
     }
     #endif
-}
-
-private struct SeedSignature: Hashable {
-    let name: String
-    let configuration: AquariumConfiguration
-    let mode: AquariumMode
 }
 
 @MainActor
