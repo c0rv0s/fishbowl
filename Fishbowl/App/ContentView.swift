@@ -435,19 +435,12 @@ private struct AddTankPage: View {
                         .allowsHitTesting(stage != .preview && stage != .analyzing)
 
                     if stage != .idle {
-                        VStack {
-                            HStack {
-                                Spacer()
-
-                                IconGlassButton(systemImage: "xmark") {
-                                    resetCreationFlow(clearStatus: false)
-                                }
-                            }
-                            .padding(.top, stage == .preview ? 12 : max(18, safeAreaInsets.top + 6))
-                            .padding(.horizontal, stage == .preview ? 14 : 22)
-
-                            Spacer()
+                        IconGlassButton(systemImage: "xmark") {
+                            resetCreationFlow(clearStatus: false)
                         }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                        .padding(.top, stage == .preview ? 16 : max(18, safeAreaInsets.top + 6))
+                        .padding(.trailing, stage == .preview ? 14 : 22)
                     }
                 }
                 .frame(width: tankSize.width, height: tankSize.height)
