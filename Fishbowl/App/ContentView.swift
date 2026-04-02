@@ -364,13 +364,19 @@ private struct AddTankPage: View {
     private let analysisDurationNanoseconds: UInt64 = 5_000_000_000
     private let humCreationTicker = Timer.publish(every: 1 / 30, on: .main, in: .common).autoconnect()
     private let tankCornerRadius: CGFloat = 34
-    private let tankInset: CGFloat = 12
+    private let tankHorizontalInset: CGFloat = 12
+    /// Vertical inset on both top and bottom so the glass panel clears the Dynamic Island and stays balanced.
+    private let tankVerticalInsetBeyondSafeTop: CGFloat = 5
 
     var body: some View {
         GeometryReader { geometry in
+            let tankVerticalInset = max(
+                tankHorizontalInset,
+                safeAreaInsets.top + tankVerticalInsetBeyondSafeTop
+            )
             let tankSize = CGSize(
-                width: max(0, geometry.size.width - tankInset * 2),
-                height: max(0, geometry.size.height - tankInset * 2)
+                width: max(0, geometry.size.width - tankHorizontalInset * 2),
+                height: max(0, geometry.size.height - tankVerticalInset * 2)
             )
             let micDiameter = min(max(tankSize.width * 0.50, 184), 224)
             let micCenterY = min(
@@ -965,19 +971,14 @@ private struct HumAudioAnalysis {
     let duration: TimeInterval
 
     var mood: HumHumMood {
-        if pitch > 225 || (averageLevel > 0.48 && variance > 0.022) {
-            return .spark
-        }
-
-        if pitch < 145 {
-            return .tide
-        }
-
-        if averageLevel < 0.26 && variance < 0.012 {
-            return .hush
-        }
-
-        return .bloom
+        var picker = SeededHumPicker(seed: seed ^ 0xA5A5_5A5A_D3C1_B97F)
+        return rankedMoods
+            .map { candidate in
+                let variation = picker.nextUnitInterval() * 0.12
+                return (mood: candidate.mood, score: candidate.score + variation)
+            }
+            .max { $0.score < $1.score }?
+            .mood ?? .bloom
     }
 
     var headline: String {
@@ -991,6 +992,8 @@ private struct HumAudioAnalysis {
             tone = "low tone"
         case ..<215:
             tone = "mid tone"
+        case ..<255:
+            tone = "lifted tone"
         default:
             tone = "bright tone"
         }
@@ -1015,6 +1018,63 @@ private struct HumAudioAnalysis {
         let v = UInt64((variance * 1_000_000).rounded())
         let d = UInt64((duration * 1_000).rounded())
         return a ^ (p << 1) ^ (v << 7) ^ (d << 13) ^ 0x9E3779B97F4A7C15
+    }
+
+    func accentMood(excluding primary: HumHumMood) -> HumHumMood {
+        let alternates = rankedMoods.filter { $0.mood != primary }
+        guard let strongestAlternate = alternates.first else { return primary }
+
+        let contenders = alternates
+            .filter { $0.score >= strongestAlternate.score - 0.10 }
+            .map(\.mood)
+
+        var picker = SeededHumPicker(seed: seed ^ 0x6A09_E667_F3BC_C909)
+        return picker.pick(contenders.isEmpty ? [strongestAlternate.mood] : contenders)
+    }
+
+    private var rankedMoods: [(mood: HumHumMood, score: Double)] {
+        let normalizedPitch = Self.clamp01((pitch - 115) / 165)
+        let lowPitchBias = Self.clamp01((175 - pitch) / 65)
+        let middlePitchBias = 1 - Self.clamp01(abs(pitch - 195) / 78)
+        let energy = Self.clamp01((averageLevel * 0.78) + (peakLevel * 0.22))
+        let motion = Self.clamp01(variance / 0.028)
+        let softness = Self.clamp01(1 - motion * 0.92)
+        let energyBalance = 1 - Self.clamp01(abs(energy - 0.36) / 0.30)
+        let motionBalance = 1 - Self.clamp01(abs(motion - 0.32) / 0.32)
+        let durationBias = Self.clamp01(duration / 8)
+
+        let hushScore = 0.40
+            + ((1 - energy) * 0.58)
+            + (softness * 0.48)
+            + (middlePitchBias * 0.10)
+        let tideScore = 0.40
+            + (lowPitchBias * 0.88)
+            + (softness * 0.18)
+            + (durationBias * 0.16)
+            + ((1 - energy) * 0.10)
+        let bloomScore = 0.54
+            + (middlePitchBias * 0.54)
+            + (energyBalance * 0.34)
+            + (motionBalance * 0.22)
+        let sparkScore = 0.18
+            + (normalizedPitch * 0.56)
+            + (energy * 0.26)
+            + (motion * 0.32)
+            + (peakLevel * 0.08)
+
+        return [
+            (.hush, hushScore),
+            (.tide, tideScore),
+            (.bloom, bloomScore),
+            (.spark, sparkScore)
+        ]
+        .sorted { lhs, rhs in
+            lhs.score > rhs.score
+        }
+    }
+
+    private static func clamp01(_ value: Double) -> Double {
+        min(max(value, 0), 1)
     }
 }
 
@@ -1192,65 +1252,31 @@ private struct HumRecorderMetrics {
     var peakLevel: Double = 0
 }
 
+private struct HumBowlRecipe {
+    var vesselPool: [AquariumVesselStyle]
+    var fishPool: [FishSpecies]
+    var substratePool: [SubstrateStyle]
+    var decorationPool: [DecorationStyle]
+    var featurePool: [FeaturePieceStyle]
+    var companionPool: [CompanionStyle]
+    var personality: FishPersonality
+    var adjectives: [String]
+    var nouns: [String]
+}
+
 private enum HumBowlGenerator {
     static func makeProfile(from analysis: HumAudioAnalysis) -> BowlProfile {
         var picker = SeededHumPicker(seed: analysis.seed)
         let mood = analysis.mood
-
-        let vesselPool: [AquariumVesselStyle]
-        let fishPool: [FishSpecies]
-        let substratePool: [SubstrateStyle]
-        let decorationPool: [DecorationStyle]
-        let featurePool: [FeaturePieceStyle]
-        let companionPool: [CompanionStyle]
-        let personality: FishPersonality
-        let adjectives: [String]
-        let nouns: [String]
-
-        switch mood {
-        case .hush:
-            vesselPool = [.orb, .gallery]
-            fishPool = [.royalBetta, .glassGold, .opalAngelfish]
-            substratePool = [.pearlSand, .moonGravel]
-            decorationPool = [.minimal, .glassPearls]
-            featurePool = [.bubbleStone, .moonLantern]
-            companionPool = [.snail, .shrimp]
-            personality = .dreamy
-            adjectives = ["Soft", "Silent", "Pearl", "Velvet"]
-            nouns = ["Lagoon", "Glass", "Drift", "Hush"]
-
-        case .tide:
-            vesselPool = [.orb, .panorama]
-            fishPool = [.moonKoi, .leopardShark, .glassGold]
-            substratePool = [.obsidianSand, .moonGravel]
-            decorationPool = [.riverRocks, .glassPearls]
-            featurePool = [.driftwoodArch, .moonLantern, .kelp]
-            companionPool = [.crab, .snail, .seaCucumber]
-            personality = .shy
-            adjectives = ["Blue", "Midnight", "Tidal", "Deep"]
-            nouns = ["Current", "Basin", "Reef", "Pool"]
-
-        case .bloom:
-            vesselPool = [.gallery, .panorama]
-            fishPool = [.moonKoi, .opalAngelfish, .glassGold, .royalBetta]
-            substratePool = [.pearlSand, .coralBloom, .moonGravel]
-            decorationPool = [.glassPearls, .riverRocks, .coralGarden]
-            featurePool = [.moonLantern, .bubbleStone, .kelp]
-            companionPool = [.shrimp, .nudibranchRibbon, .snail]
-            personality = .playful
-            adjectives = ["Lush", "Bloom", "Golden", "Warm"]
-            nouns = ["Bowl", "Lantern", "Garden", "Glow"]
-
-        case .spark:
-            vesselPool = [.panorama, .gallery]
-            fishPool = [.neonGuppy, .emberTetra, .opalAngelfish, .moonKoi]
-            substratePool = [.obsidianSand, .coralBloom, .moonGravel]
-            decorationPool = [.coralGarden, .glassPearls, .riverRocks]
-            featurePool = [.kelp, .moonLantern, .driftwoodArch]
-            companionPool = [.crab, .shrimp, .nudibranchFlame]
-            personality = .greedy
-            adjectives = ["Neon", "Electric", "Bright", "Wild"]
-            nouns = ["Surge", "Pulse", "Flash", "Current"]
+        var recipe = Self.recipe(for: mood)
+        let accentMood = analysis.accentMood(excluding: mood)
+        if accentMood != mood {
+            blendAccent(
+                into: &recipe,
+                accent: Self.recipe(for: accentMood),
+                analysis: analysis,
+                picker: &picker
+            )
         }
 
         let fishCount: FishCount
@@ -1262,14 +1288,14 @@ private enum HumBowlGenerator {
             fishCount = .solo
         }
 
-        let primaryFish = picker.pick(fishPool)
+        let primaryFish = picker.pick(recipe.fishPool)
         let allowsMixedSpecies = analysis.averageLevel > 0.32 || analysis.variance > 0.016 || mood == .spark
         let extraCount = max(0, fishCount.value - 1)
         var extras: [FishSpecies] = []
 
         for _ in 0..<extraCount {
             if allowsMixedSpecies, picker.coinFlip() {
-                let alternatePool = Array(Set(fishPool.filter { $0 != primaryFish }))
+                let alternatePool = recipe.fishPool.filter { $0 != primaryFish }
                 extras.append(alternatePool.isEmpty ? primaryFish : picker.pick(alternatePool))
             } else {
                 extras.append(primaryFish)
@@ -1287,30 +1313,127 @@ private enum HumBowlGenerator {
 
         var companions: [CompanionStyle] = []
         while companions.count < companionCount {
-            let candidate = picker.pick(companionPool)
+            let candidate = picker.pick(recipe.companionPool)
             if !companions.contains(candidate) {
                 companions.append(candidate)
             }
         }
 
         let profile = BowlProfile(
-            name: "\(picker.pick(adjectives)) \(picker.pick(nouns))",
+            name: "\(picker.pick(recipe.adjectives)) \(picker.pick(recipe.nouns))",
             configuration: AquariumConfiguration(
-                vesselStyle: picker.pick(vesselPool),
+                vesselStyle: picker.pick(recipe.vesselPool),
                 fishSpecies: primaryFish,
                 fishCount: fishCount,
                 additionalFishSpecies: extras,
-                personality: personality,
+                personality: recipe.personality,
                 companions: companions,
-                substrate: picker.pick(substratePool),
-                decoration: picker.pick(decorationPool),
-                featurePiece: picker.pick(featurePool)
+                substrate: picker.pick(recipe.substratePool),
+                decoration: picker.pick(recipe.decorationPool),
+                featurePiece: picker.pick(recipe.featurePool)
             ),
             mode: .pet,
             petState: .fresh()
         )
 
         return profile
+    }
+
+    private static func recipe(for mood: HumHumMood) -> HumBowlRecipe {
+        switch mood {
+        case .hush:
+            return HumBowlRecipe(
+                vesselPool: [.orb, .gallery],
+                fishPool: [.royalBetta, .glassGold, .opalAngelfish],
+                substratePool: [.pearlSand, .moonGravel],
+                decorationPool: [.minimal, .glassPearls],
+                featurePool: [.bubbleStone, .moonLantern],
+                companionPool: [.snail, .shrimp],
+                personality: .dreamy,
+                adjectives: ["Soft", "Silent", "Pearl", "Velvet"],
+                nouns: ["Lagoon", "Glass", "Drift", "Hush"]
+            )
+
+        case .tide:
+            return HumBowlRecipe(
+                vesselPool: [.orb, .panorama],
+                fishPool: [.moonKoi, .leopardShark, .glassGold],
+                substratePool: [.obsidianSand, .moonGravel],
+                decorationPool: [.riverRocks, .glassPearls],
+                featurePool: [.driftwoodArch, .moonLantern, .kelp],
+                companionPool: [.crab, .snail, .seaCucumber],
+                personality: .shy,
+                adjectives: ["Blue", "Midnight", "Tidal", "Deep"],
+                nouns: ["Current", "Basin", "Reef", "Pool"]
+            )
+
+        case .bloom:
+            return HumBowlRecipe(
+                vesselPool: [.gallery, .panorama],
+                fishPool: [.moonKoi, .opalAngelfish, .glassGold, .royalBetta],
+                substratePool: [.pearlSand, .coralBloom, .moonGravel],
+                decorationPool: [.glassPearls, .riverRocks, .coralGarden],
+                featurePool: [.moonLantern, .bubbleStone, .kelp],
+                companionPool: [.shrimp, .nudibranchRibbon, .snail],
+                personality: .playful,
+                adjectives: ["Lush", "Bloom", "Golden", "Warm"],
+                nouns: ["Bowl", "Lantern", "Garden", "Glow"]
+            )
+
+        case .spark:
+            return HumBowlRecipe(
+                vesselPool: [.panorama, .gallery],
+                fishPool: [.neonGuppy, .emberTetra, .opalAngelfish, .moonKoi],
+                substratePool: [.obsidianSand, .coralBloom, .moonGravel],
+                decorationPool: [.coralGarden, .glassPearls, .riverRocks],
+                featurePool: [.kelp, .moonLantern, .driftwoodArch],
+                companionPool: [.crab, .shrimp, .nudibranchFlame],
+                personality: .greedy,
+                adjectives: ["Neon", "Electric", "Bright", "Wild"],
+                nouns: ["Surge", "Pulse", "Flash", "Current"]
+            )
+        }
+    }
+
+    private static func blendAccent(
+        into recipe: inout HumBowlRecipe,
+        accent: HumBowlRecipe,
+        analysis: HumAudioAnalysis,
+        picker: inout SeededHumPicker
+    ) {
+        let blendStrength = min(0.58, 0.22 + (analysis.variance * 9) + (analysis.averageLevel * 0.12))
+
+        if picker.nextUnitInterval() < blendStrength {
+            recipe.vesselPool = appendingUnique(recipe.vesselPool, picker.pick(accent.vesselPool))
+        }
+        if picker.nextUnitInterval() < blendStrength + 0.10 {
+            recipe.fishPool = appendingUnique(recipe.fishPool, picker.pick(accent.fishPool))
+        }
+        if picker.nextUnitInterval() < blendStrength + 0.06 {
+            recipe.substratePool = appendingUnique(recipe.substratePool, picker.pick(accent.substratePool))
+        }
+        if picker.nextUnitInterval() < blendStrength + 0.14 {
+            recipe.decorationPool = appendingUnique(recipe.decorationPool, picker.pick(accent.decorationPool))
+        }
+        if picker.nextUnitInterval() < blendStrength {
+            recipe.featurePool = appendingUnique(recipe.featurePool, picker.pick(accent.featurePool))
+        }
+        if picker.nextUnitInterval() < blendStrength {
+            recipe.companionPool = appendingUnique(recipe.companionPool, picker.pick(accent.companionPool))
+        }
+        if picker.nextUnitInterval() < blendStrength + 0.18 {
+            recipe.adjectives = appendingUnique(recipe.adjectives, picker.pick(accent.adjectives))
+        }
+        if picker.nextUnitInterval() < blendStrength + 0.18 {
+            recipe.nouns = appendingUnique(recipe.nouns, picker.pick(accent.nouns))
+        }
+        if picker.nextUnitInterval() < blendStrength * 0.36 {
+            recipe.personality = accent.personality
+        }
+    }
+
+    private static func appendingUnique<T: Hashable>(_ values: [T], _ candidate: T) -> [T] {
+        values.contains(candidate) ? values : values + [candidate]
     }
 }
 
@@ -1329,14 +1452,21 @@ private struct SeededHumPicker {
         nextIndex(upperBound: 2) == 0
     }
 
+    mutating func nextUnitInterval() -> Double {
+        Double(nextRandomValue()) / Double(UInt64.max)
+    }
+
     private mutating func nextIndex(upperBound: Int) -> Int {
         guard upperBound > 0 else { return 0 }
+        return Int(nextRandomValue() % UInt64(upperBound))
+    }
+
+    private mutating func nextRandomValue() -> UInt64 {
         state &+= 0x9E3779B97F4A7C15
         var value = state
         value = (value ^ (value >> 30)) &* 0xBF58476D1CE4E5B9
         value = (value ^ (value >> 27)) &* 0x94D049BB133111EB
-        value = value ^ (value >> 31)
-        return Int(value % UInt64(upperBound))
+        return value ^ (value >> 31)
     }
 }
 
@@ -1609,6 +1739,7 @@ private struct HumTankChrome: View {
                         )
                     )
                     .frame(height: min(geometry.size.height * 0.22, 140))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     .clipShape(shape)
                     .blendMode(.screen)
             }
