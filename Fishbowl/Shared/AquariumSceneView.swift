@@ -331,6 +331,10 @@ private struct AquariumInteriorView: View {
         configuration.substrate.accentColors + configuration.decoration.accentColors + configuration.fishPalette
     }
 
+    private var isFoodSequenceActive: Bool {
+        !foodPellets.isEmpty
+    }
+
     var body: some View {
         GeometryReader { geometry in
             let size = geometry.size
@@ -994,7 +998,7 @@ private struct AquariumInteriorView: View {
     }
 
     private func fishThoughtBubbles(for layouts: [FishLayout]) -> [ThoughtLayout] {
-        guard format != .widgetSmall, !layouts.isEmpty else { return [] }
+        guard format != .widgetSmall, !layouts.isEmpty, !isFoodSequenceActive else { return [] }
 
         let hourBucket = Int(petSnapshot.date.timeIntervalSince1970 / 3600)
         let seed = abs(configuration.hashValue ^ hourBucket)
@@ -1052,7 +1056,7 @@ private struct AquariumInteriorView: View {
     }
 
     private func visitorThoughtBubble(_ visitor: RareVisitorLayout?) -> ThoughtLayout? {
-        guard format != .widgetSmall, let visitor else { return nil }
+        guard format != .widgetSmall, !isFoodSequenceActive, let visitor else { return nil }
 
         return ThoughtLayout(
             text: visitor.kind == .moonJelly ? "✨" : "🪽",
@@ -5542,7 +5546,7 @@ private struct AquariumMetalMotionResolver {
     }
 
     func visitorThoughtBubble() -> ThoughtLayout? {
-        guard format != .widgetSmall, let visitor = rareVisitor() else { return nil }
+        guard format != .widgetSmall, !shouldSuppressThoughtBubbles(), let visitor = rareVisitor() else { return nil }
 
         return ThoughtLayout(
             text: visitor.kind == .moonJelly ? "✨" : "🪽",
@@ -5553,7 +5557,7 @@ private struct AquariumMetalMotionResolver {
 
     func fishThoughtBubbles() -> [ThoughtLayout] {
         let layouts = fishLayouts()
-        guard format != .widgetSmall, !layouts.isEmpty else { return [] }
+        guard format != .widgetSmall, !layouts.isEmpty, !shouldSuppressThoughtBubbles() else { return [] }
 
         let hourBucket = Int(petSnapshot.date.timeIntervalSince1970 / 3600)
         let seed = abs(configuration.hashValue ^ hourBucket)
@@ -5602,6 +5606,10 @@ private struct AquariumMetalMotionResolver {
         }
 
         return baseScale
+    }
+
+    private func shouldSuppressThoughtBubbles() -> Bool {
+        !foodPellets().isEmpty || focusedFoodResponse != nil
     }
 
     private func clampedFishPosition(_ position: CGPoint, species: FishSpecies, spriteScale: CGFloat) -> CGPoint {
