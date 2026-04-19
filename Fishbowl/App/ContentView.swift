@@ -35,10 +35,10 @@ struct ContentView: View {
                                 safeAreaInsets: geometry.safeAreaInsets,
                                 feedBursts: feedBurstsByProfileID[profile.id] ?? [],
                                 onFeed: { xFraction in
-                                    dropFood(in: profile, at: xFraction)
+                                    dropFood(in: profile.id, at: xFraction)
                                 },
                                 onFeedConsumed: { burstID in
-                                    finishFeeding(in: profile, burstID: burstID)
+                                    finishFeeding(in: profile.id, burstID: burstID)
                                 },
                                 onDelete: {
                                     deletingProfile = profile
@@ -129,31 +129,46 @@ struct ContentView: View {
         }
     }
 
-    private func dropFood(in profile: BowlProfile, at xFraction: CGFloat) {
+    private func dropFood(in profileID: UUID, at xFraction: CGFloat) {
+        guard let profile = currentProfile(id: profileID) else { return }
         let snapshot = profile.petSnapshot(at: .now)
         guard profile.mode == .pet, snapshot.isAlive else { return }
 
         let now = Date.now
-        let clampedX = min(max(xFraction, 0.18), 0.82)
-        let activeBursts = feedBurstsByProfileID[profile.id, default: []]
-            .filter { $0.endsAt > now }
+        let clampedX = min(
+            max(xFraction, AquariumFeedBurst.horizontalDropBounds.lowerBound),
+            AquariumFeedBurst.horizontalDropBounds.upperBound
+        )
+        let activeBursts = feedBurstsByProfileID[profileID, default: []]
+        guard activeBursts.count < AquariumFeedBurst.maxQueuedBursts else { return }
 
-        feedBurstsByProfileID[profile.id] = activeBursts
-        guard activeBursts.isEmpty else { return }
-
-        feedBurstsByProfileID[profile.id] = [
+        feedBurstsByProfileID[profileID] = activeBursts + [
             AquariumFeedBurst(startedAt: now, xFraction: clampedX)
         ]
     }
 
-    private func finishFeeding(in profile: BowlProfile, burstID: UUID) {
-        let currentBursts = feedBurstsByProfileID[profile.id, default: []]
+    private func finishFeeding(in profileID: UUID, burstID: UUID) {
+        guard let profile = currentProfile(id: profileID) else {
+            feedBurstsByProfileID[profileID] = nil
+            return
+        }
+
+        let currentBursts = feedBurstsByProfileID[profileID, default: []]
         guard currentBursts.contains(where: { $0.id == burstID }) else { return }
 
-        feedBurstsByProfileID[profile.id] = currentBursts.filter { $0.id != burstID }
+        feedBurstsByProfileID[profileID] = currentBursts.filter { $0.id != burstID }
         let willBurst = profile.willBurstOnNextFeed(at: .now)
         withAnimation(.easeInOut(duration: willBurst ? 0.72 : 0.34)) {
-            studio.feedProfile(id: profile.id, at: .now)
+            studio.feedProfile(id: profileID, at: .now)
+        }
+
+        guard let updatedProfile = currentProfile(id: profileID) else {
+            feedBurstsByProfileID[profileID] = nil
+            return
+        }
+
+        if !updatedProfile.petSnapshot(at: .now).isAlive {
+            feedBurstsByProfileID[profileID] = nil
         }
     }
 
@@ -183,6 +198,10 @@ struct ContentView: View {
 
     private func shouldPrepareLiveScene(for profileID: UUID) -> Bool {
         studio.profiles.contains { $0.id == profileID }
+    }
+
+    private func currentProfile(id: UUID) -> BowlProfile? {
+        studio.profiles.first { $0.id == id }
     }
 }
 
@@ -2820,10 +2839,11 @@ private struct AnimatedAquariumStage: View {
     }
 
     private func registerInteraction(at location: CGPoint, in size: CGSize) {
-        let width = max(size.width, 1)
+        let inset = format.bodyInset
+        let width = max(size.width - inset * 2, 1)
         let height = max(size.height, 1)
         let normalizedLocation = CGPoint(
-            x: min(max(location.x / width, 0.08), 0.92),
+            x: min(max((location.x - inset) / width, 0.04), 0.96),
             y: min(max(location.y / height, 0.10), 0.90)
         )
         let now = Date.now

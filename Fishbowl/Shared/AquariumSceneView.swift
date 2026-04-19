@@ -12,27 +12,33 @@ import UIKit
 typealias AquariumFeedBurstConsumedHandler = @MainActor @Sendable (UUID) -> Void
 
 struct AquariumFeedBurst: Identifiable, Hashable, Sendable {
-    static let dropDuration: TimeInterval = 1.15
-    static let grazeDuration: TimeInterval = 1.8
-    static let releaseDuration: TimeInterval = 1.6
-    static let settleDuration: TimeInterval = 2.2
-    static let burstTriggerTime = dropDuration + grazeDuration * 0.92
-    static let burstAnimationDuration: TimeInterval = 0.96
+    static let maxQueuedBursts = 10
+    static let horizontalDropBounds: ClosedRange<CGFloat> = 0.10...0.90
+    static let dropDuration: TimeInterval = 0.95
+    static let grazeDuration: TimeInterval = 1.35
+    static let releaseDuration: TimeInterval = 0.80
+    static let settleDuration: TimeInterval = 0.60
+    static let handoffBlendDuration: TimeInterval = 0.92
+    static let returnBlendDuration: TimeInterval = 0.84
+    static let burstAnimationDuration: TimeInterval = 0.88
     static let feedingCycleDuration = dropDuration + grazeDuration + releaseDuration + settleDuration
     static let interactionLockDuration = feedingCycleDuration + burstAnimationDuration
 
     let id: UUID
     let startedAt: Date
     let xFraction: CGFloat
+    let feedingStartsAt: Date?
 
-    init(id: UUID = UUID(), startedAt: Date, xFraction: CGFloat) {
+    init(
+        id: UUID = UUID(),
+        startedAt: Date,
+        xFraction: CGFloat,
+        feedingStartsAt: Date? = nil
+    ) {
         self.id = id
         self.startedAt = startedAt
         self.xFraction = xFraction
-    }
-
-    var endsAt: Date {
-        startedAt.addingTimeInterval(Self.interactionLockDuration)
+        self.feedingStartsAt = feedingStartsAt
     }
 }
 
@@ -46,6 +52,172 @@ struct AquariumTapRipple: Identifiable, Hashable, Sendable {
         self.startedAt = startedAt
         self.normalizedLocation = normalizedLocation
     }
+}
+
+private struct AquariumScheduledFeedBurst {
+    let burst: AquariumFeedBurst
+    let dropCompletionTime: Date
+    let feedingStartTime: Date
+    let consumeTime: Date
+}
+
+private enum AquariumResolvedFeedStage {
+    case hidden
+    case consumed
+    case activeDropping(progress: CGFloat)
+    case queuedDropping(progress: CGFloat)
+    case queuedWaiting(elapsed: TimeInterval)
+    case activeFeeding(progress: CGFloat)
+
+    var isActive: Bool {
+        switch self {
+        case .activeDropping, .activeFeeding:
+            return true
+        default:
+            return false
+        }
+    }
+}
+
+private struct AquariumResolvedFeedBurst {
+    let scheduled: AquariumScheduledFeedBurst
+    let stage: AquariumResolvedFeedStage
+}
+
+private func scheduleFeedBursts(_ feedBursts: [AquariumFeedBurst]) -> [AquariumScheduledFeedBurst] {
+    let orderedBursts = feedBursts.enumerated()
+        .sorted { lhs, rhs in
+            if lhs.element.startedAt == rhs.element.startedAt {
+                return lhs.offset < rhs.offset
+            }
+            return lhs.element.startedAt < rhs.element.startedAt
+        }
+        .map(\.element)
+
+    return orderedBursts.map { burst in
+        let dropCompletionTime = burst.startedAt.addingTimeInterval(AquariumFeedBurst.dropDuration)
+        let feedingStartTime = max(dropCompletionTime, burst.feedingStartsAt ?? dropCompletionTime)
+        return AquariumScheduledFeedBurst(
+            burst: burst,
+            dropCompletionTime: dropCompletionTime,
+            feedingStartTime: feedingStartTime,
+            consumeTime: feedingStartTime.addingTimeInterval(AquariumFeedBurst.grazeDuration)
+        )
+    }
+}
+
+private func resolveFeedBursts(_ feedBursts: [AquariumFeedBurst], at date: Date) -> [AquariumResolvedFeedBurst] {
+    scheduleFeedBursts(feedBursts).map { scheduled in
+        let burst = scheduled.burst
+
+        let stage: AquariumResolvedFeedStage
+        if date < burst.startedAt {
+            stage = .hidden
+        } else if date >= scheduled.consumeTime {
+            stage = .consumed
+        } else if date < scheduled.dropCompletionTime {
+            let progress = CGFloat(
+                min(max(date.timeIntervalSince(burst.startedAt) / AquariumFeedBurst.dropDuration, 0), 1)
+            )
+            stage = scheduled.feedingStartTime <= scheduled.dropCompletionTime
+            ? .activeDropping(progress: progress)
+            : .queuedDropping(progress: progress)
+        } else if date < scheduled.feedingStartTime {
+            stage = .queuedWaiting(elapsed: date.timeIntervalSince(scheduled.dropCompletionTime))
+        } else {
+            let progress = CGFloat(
+                min(max(date.timeIntervalSince(scheduled.feedingStartTime) / AquariumFeedBurst.grazeDuration, 0), 1)
+            )
+            stage = .activeFeeding(progress: progress)
+        }
+
+        return AquariumResolvedFeedBurst(scheduled: scheduled, stage: stage)
+    }
+}
+
+private func pellets(for resolvedBurst: AquariumResolvedFeedBurst) -> [AquariumFoodPellet] {
+    let burst = resolvedBurst.scheduled.burst
+
+    return (0..<3).compactMap { index in
+        let spread = CGFloat(index - 1) * 0.024
+        let x = min(
+            max(
+                burst.xFraction + spread,
+                AquariumFeedBurst.horizontalDropBounds.lowerBound
+            ),
+            AquariumFeedBurst.horizontalDropBounds.upperBound
+        )
+        let restingDepth = 0.50 + CGFloat(index) * 0.07
+        let restingY = min(0.76, 0.08 + restingDepth)
+        let bobSeed = Double(index) * 0.8
+
+        let y: CGFloat
+        let visibility: CGFloat
+        let attraction: CGFloat
+
+        switch resolvedBurst.stage {
+        case let .activeDropping(progress):
+            let easedDrop = CGFloat(1 - pow(1 - progress, 2.2))
+            y = min(0.76, 0.08 + easedDrop * restingDepth)
+            visibility = 1
+            attraction = 0.40 + progress * 0.30
+        case let .queuedDropping(progress):
+            let easedDrop = CGFloat(1 - pow(1 - progress, 2.0))
+            y = min(0.76, 0.08 + easedDrop * restingDepth)
+            visibility = 0.96
+            attraction = 0.14 + progress * 0.06
+        case let .queuedWaiting(elapsed):
+            y = restingY + CGFloat(sin(elapsed * 2.6 + bobSeed)) * 0.005
+            visibility = 0.92
+            attraction = 0.12
+        case let .activeFeeding(progress):
+            let nibbleAmount = 0.012 - progress * 0.006
+            y = restingY + CGFloat(sin(Double(progress) * .pi * 3 + bobSeed)) * nibbleAmount
+            visibility = max(0.18, 0.96 - progress * 0.58)
+            attraction = 0.42 + smoothStep(from: 0.05, to: 0.72, value: progress) * 0.42
+        case .hidden, .consumed:
+            return nil
+        }
+
+        let baseScale: CGFloat = index == 1 ? 1.0 : 0.84
+        return AquariumFoodPellet(
+            xFraction: x,
+            yFraction: y,
+            scale: baseScale * visibility,
+            attraction: attraction
+        )
+    }
+}
+
+private func foodResponse(
+    for resolvedBurst: AquariumResolvedFeedBurst,
+    in size: CGSize
+) -> FoodResponse? {
+    let activePellets = pellets(for: resolvedBurst)
+    guard !activePellets.isEmpty else { return nil }
+
+    let xFraction = activePellets.map(\.xFraction).reduce(0, +) / CGFloat(activePellets.count)
+    let yFraction = activePellets.map(\.yFraction).reduce(0, +) / CGFloat(activePellets.count)
+    let attraction = activePellets.map(\.attraction).reduce(0, +) / CGFloat(activePellets.count)
+    let depthProgress = smoothStep(from: 0.18, to: 0.74, value: yFraction)
+    let freshness = smoothStep(from: 0.02, to: 0.82, value: attraction)
+    let strength = min(0.92, depthProgress * freshness)
+
+    guard strength > 0.008 else { return nil }
+
+    return FoodResponse(
+        anchor: CGPoint(
+            x: size.width * xFraction,
+            y: size.height * yFraction
+        ),
+        strength: strength
+    )
+}
+
+private func smoothStep(from lower: CGFloat, to upper: CGFloat, value: CGFloat) -> CGFloat {
+    guard upper > lower else { return 0 }
+    let t = min(max((value - lower) / (upper - lower), 0), 1)
+    return t * t * (3 - 2 * t)
 }
 
 struct AquariumSceneView: View {
@@ -912,6 +1084,13 @@ private struct BurstAnimationState {
     let burstID: UUID
     let startedAt: TimeInterval
     let fishVisuals: [BurstFishVisual]
+    let bodyOvalScaleY: CGFloat
+}
+
+private struct RecentFeedHandoff {
+    let response: FoodResponse
+    let startedAt: Date
+    let duration: TimeInterval
 }
 
 private struct CompanionLayout {
@@ -3132,13 +3311,17 @@ private final class AquariumSpriteScene: SKScene {
     private var burstFlashNode: SKSpriteNode?
     private var animationElapsed: TimeInterval = 0
     private var lastUpdateTimestamp: TimeInterval?
+    private var lastFrameDuration: TimeInterval = 1.0 / 60.0
     private var renderPaused = false
     private let animationEpoch = Date()
     private var hasRenderedInitialFrame = false
     private var feedBurstStartTimes: [UUID: TimeInterval] = [:]
+    private var feedBurstFeedingStartTimes: [UUID: TimeInterval] = [:]
     private var tapRippleStartTimes: [UUID: TimeInterval] = [:]
     private var consumedFeedBurstIDs: Set<UUID> = []
     private var activeBurstAnimation: BurstAnimationState?
+    private var recentFeedHandoff: RecentFeedHandoff?
+    private var lastRenderedFoodResponse: FoodResponse?
     private var lastRenderedFishVisuals: [BurstFishVisual] = []
     private var onFeedBurstConsumed: AquariumFeedBurstConsumedHandler
 
@@ -3218,6 +3401,9 @@ private final class AquariumSpriteScene: SKScene {
         if let lastUpdateTimestamp {
             let delta = max(0, min(currentTime - lastUpdateTimestamp, 1.0 / 20.0))
             animationElapsed += delta
+            lastFrameDuration = delta
+        } else {
+            lastFrameDuration = 1.0 / 60.0
         }
         lastUpdateTimestamp = currentTime
 
@@ -3231,18 +3417,35 @@ private final class AquariumSpriteScene: SKScene {
         let phase = animationElapsed / 4.1 + phaseOffset
         let snapshot = profile.petSnapshot(at: referenceDate)
         let animationDate = animationEpoch.addingTimeInterval(animationElapsed)
+        let sceneFeedBursts = sceneTimedFeedBursts()
+        let baseResolver = AquariumMetalMotionResolver(
+            configuration: configuration,
+            format: format,
+            phase: phase,
+            petSnapshot: snapshot,
+            feedBursts: sceneFeedBursts,
+            tapRipples: sceneTimedTapRipples(),
+            animationDate: animationDate,
+            size: size
+        )
+        let effectiveFoodResponse = blendedFoodResponse(
+            current: baseResolver.activeFoodResponse(),
+            at: animationDate
+        )
         let resolver = AquariumMetalMotionResolver(
             configuration: configuration,
             format: format,
             phase: phase,
             petSnapshot: snapshot,
-            feedBursts: sceneTimedFeedBursts(),
+            feedBursts: sceneFeedBursts,
             tapRipples: sceneTimedTapRipples(),
             animationDate: animationDate,
+            focusedFoodResponse: effectiveFoodResponse,
             size: size
         )
         let fishLayouts = resolver.fishLayouts()
         let burstProgress = activeBurstAnimation.map { burstAnimationProgress(for: $0) }
+        lastRenderedFoodResponse = effectiveFoodResponse
 
         syncBubbles(with: resolver.bubbles())
         syncRipples(with: resolver.ripples())
@@ -3253,15 +3456,13 @@ private final class AquariumSpriteScene: SKScene {
         if let activeBurstAnimation, let burstProgress {
             syncFishBurstAnimation(
                 activeBurstAnimation,
-                progress: burstProgress,
-                snapshot: snapshot
+                progress: burstProgress
             )
             syncFishThoughts(with: [])
             syncVisitorThought(with: nil)
             syncBurstOverlay(progress: burstProgress, fishVisuals: activeBurstAnimation.fishVisuals)
         } else {
-            syncFish(with: fishLayouts, using: resolver, snapshot: snapshot)
-            lastRenderedFishVisuals = captureFishVisuals(from: fishLayouts, resolver: resolver)
+            lastRenderedFishVisuals = syncFish(with: fishLayouts, using: resolver, snapshot: snapshot)
             syncFishThoughts(with: resolver.fishThoughtBubbles())
             syncVisitorThought(with: resolver.visitorThoughtBubble())
             syncBurstOverlay(progress: nil, fishVisuals: [])
@@ -3451,12 +3652,24 @@ private final class AquariumSpriteScene: SKScene {
     private func syncAnimationAnchors(referenceDate: Date) {
         let activeFeedIDs = Set(feedBursts.map(\.id))
         feedBurstStartTimes = feedBurstStartTimes.filter { activeFeedIDs.contains($0.key) }
+        feedBurstFeedingStartTimes = feedBurstFeedingStartTimes.filter { activeFeedIDs.contains($0.key) }
         consumedFeedBurstIDs = consumedFeedBurstIDs.filter { activeFeedIDs.contains($0) }
-        if let activeBurstAnimation, !activeFeedIDs.contains(activeBurstAnimation.burstID) {
-            self.activeBurstAnimation = nil
-        }
         for burst in feedBursts where feedBurstStartTimes[burst.id] == nil {
             feedBurstStartTimes[burst.id] = animationElapsed + max(0, burst.startedAt.timeIntervalSince(referenceDate))
+        }
+        var previousConsumeTime: TimeInterval?
+        for burst in feedBursts {
+            guard let startTime = feedBurstStartTimes[burst.id] else { continue }
+            let defaultFeedingStartTime = max(
+                startTime + AquariumFeedBurst.dropDuration,
+                previousConsumeTime ?? startTime + AquariumFeedBurst.dropDuration
+            )
+            let feedingStartTime = max(
+                feedBurstFeedingStartTimes[burst.id] ?? defaultFeedingStartTime,
+                startTime + AquariumFeedBurst.dropDuration
+            )
+            feedBurstFeedingStartTimes[burst.id] = feedingStartTime
+            previousConsumeTime = feedingStartTime + AquariumFeedBurst.grazeDuration
         }
 
         let activeRippleIDs = Set(tapRipples.map(\.id))
@@ -3470,43 +3683,58 @@ private final class AquariumSpriteScene: SKScene {
         if let activeBurstAnimation {
             if burstAnimationProgress(for: activeBurstAnimation) >= 1 {
                 self.activeBurstAnimation = nil
-
-                guard consumedFeedBurstIDs.insert(activeBurstAnimation.burstID).inserted else { return }
-                DispatchQueue.main.async { [onFeedBurstConsumed] in
-                    onFeedBurstConsumed(activeBurstAnimation.burstID)
-                }
             }
         }
 
-        for burst in feedBursts {
-            guard let startTime = feedBurstStartTimes[burst.id] else { continue }
-            guard !consumedFeedBurstIDs.contains(burst.id) else { continue }
+        let sceneFeedBursts = sceneTimedFeedBursts()
+        let scheduledBursts = scheduleFeedBursts(sceneFeedBursts)
+        guard let dueIndex = scheduledBursts.firstIndex(where: {
+            !consumedFeedBurstIDs.contains($0.burst.id) && animationEpoch.addingTimeInterval(animationElapsed) >= $0.consumeTime
+        }) else {
+            return
+        }
 
-            let burstWouldPop = profile.willBurstOnNextFeed(
-                at: animationEpoch.addingTimeInterval(startTime + AquariumFeedBurst.burstTriggerTime)
+        let scheduledBurst = scheduledBursts[dueIndex]
+        guard consumedFeedBurstIDs.insert(scheduledBurst.burst.id).inserted else { return }
+
+        let burstWouldPop = profile.willBurstOnNextFeed(at: scheduledBurst.consumeTime)
+        if burstWouldPop {
+            recentFeedHandoff = nil
+            startBurstAnimation(
+                for: scheduledBurst,
+                snapshot: profile.petSnapshot(at: scheduledBurst.consumeTime)
             )
-
-            if burstWouldPop {
-                guard activeBurstAnimation?.burstID != burst.id else { continue }
-                guard animationElapsed - startTime >= AquariumFeedBurst.burstTriggerTime else { continue }
-                startBurstAnimation(for: burst, startTime: startTime)
-                continue
-            }
-
-            guard animationElapsed - startTime >= AquariumFeedBurst.feedingCycleDuration else { continue }
-            guard consumedFeedBurstIDs.insert(burst.id).inserted else { continue }
-
             DispatchQueue.main.async { [onFeedBurstConsumed] in
-                onFeedBurstConsumed(burst.id)
+                onFeedBurstConsumed(scheduledBurst.burst.id)
             }
+            return
+        }
+
+        if let lastRenderedFoodResponse {
+            let hasPendingSuccessor = dueIndex < scheduledBursts.index(before: scheduledBursts.endIndex)
+            recentFeedHandoff = RecentFeedHandoff(
+                response: lastRenderedFoodResponse,
+                startedAt: scheduledBurst.consumeTime,
+                duration: hasPendingSuccessor
+                ? AquariumFeedBurst.handoffBlendDuration
+                : AquariumFeedBurst.returnBlendDuration
+            )
+        }
+
+        DispatchQueue.main.async { [onFeedBurstConsumed] in
+            onFeedBurstConsumed(scheduledBurst.burst.id)
         }
     }
 
-    private func startBurstAnimation(for burst: AquariumFeedBurst, startTime: TimeInterval) {
+    private func startBurstAnimation(
+        for scheduledBurst: AquariumScheduledFeedBurst,
+        snapshot: AquariumPetSnapshot
+    ) {
         activeBurstAnimation = BurstAnimationState(
-            burstID: burst.id,
-            startedAt: startTime + AquariumFeedBurst.burstTriggerTime,
-            fishVisuals: lastRenderedFishVisuals
+            burstID: scheduledBurst.burst.id,
+            startedAt: scheduledBurst.consumeTime.timeIntervalSince(animationEpoch),
+            fishVisuals: lastRenderedFishVisuals,
+            bodyOvalScaleY: snapshot.bodyOvalScaleY
         )
         syncPellets(with: [])
         syncFishThoughts(with: [])
@@ -3516,10 +3744,15 @@ private final class AquariumSpriteScene: SKScene {
 
     private func sceneTimedFeedBursts() -> [AquariumFeedBurst] {
         feedBursts.map { burst in
-            AquariumFeedBurst(
+            let startTime = feedBurstStartTimes[burst.id] ?? animationElapsed
+            return AquariumFeedBurst(
                 id: burst.id,
-                startedAt: animationEpoch.addingTimeInterval(feedBurstStartTimes[burst.id] ?? animationElapsed),
-                xFraction: burst.xFraction
+                startedAt: animationEpoch.addingTimeInterval(startTime),
+                xFraction: burst.xFraction,
+                feedingStartsAt: animationEpoch.addingTimeInterval(
+                    feedBurstFeedingStartTimes[burst.id]
+                    ?? startTime + AquariumFeedBurst.dropDuration
+                )
             )
         }
     }
@@ -3636,7 +3869,7 @@ private final class AquariumSpriteScene: SKScene {
         with layouts: [FishLayout],
         using resolver: AquariumMetalMotionResolver,
         snapshot: AquariumPetSnapshot
-    ) {
+    ) -> [BurstFishVisual] {
         syncNodeCount(&fishNodes, desiredCount: layouts.count) {
             let root = SKNode()
             root.zPosition = 32
@@ -3649,14 +3882,33 @@ private final class AquariumSpriteScene: SKScene {
             return root
         }
 
+        let frameDuration = max(1.0 / 120.0, min(lastFrameDuration, 1.0 / 15.0))
+        let hasFoodTarget = resolver.focusedFoodResponse != nil || resolver.activeFoodResponse() != nil
+        let maxTravelDistance = CGFloat(frameDuration) * (hasFoodTarget ? 260 : 120)
+        let maxRotationStep = CGFloat(frameDuration) * (hasFoodTarget ? .pi * 2.2 : .pi * 1.2)
+        var renderedVisuals: [BurstFishVisual] = []
+        renderedVisuals.reserveCapacity(layouts.count)
+
         for (index, layout) in layouts.enumerated() {
             let root = fishNodes[index]
             guard let vertical = root.childNode(withName: Self.fishVerticalStretchNodeName) else { continue }
             guard let sprite = vertical.childNode(withName: Self.fishSpriteChildName) as? SKSpriteNode else { continue }
             let frame = resolver.fishRenderRect(for: layout)
-            let center = CGPoint(x: frame.midX, y: frame.midY)
-            root.position = scenePoint(from: center)
-            root.zRotation = -CGFloat(layout.rotation) * .pi / 180
+            let targetPosition = scenePoint(from: CGPoint(x: frame.midX, y: frame.midY))
+            let targetRotation = -CGFloat(layout.rotation) * .pi / 180
+            let hasInitializedMotion = (root.userData?["motionInitialized"] as? Bool) == true
+
+            if hasInitializedMotion {
+                root.position = movePoint(root.position, toward: targetPosition, maxDistance: maxTravelDistance)
+                root.zRotation = moveAngle(root.zRotation, toward: targetRotation, maxStep: maxRotationStep)
+            } else {
+                root.position = targetPosition
+                root.zRotation = targetRotation
+                let userData = root.userData ?? NSMutableDictionary()
+                userData["motionInitialized"] = true
+                root.userData = userData
+            }
+
             root.isHidden = false
             vertical.xScale = 1
             vertical.yScale = snapshot.bodyOvalScaleY
@@ -3670,23 +3922,19 @@ private final class AquariumSpriteScene: SKScene {
             sprite.xScale = layout.isMirrored ? -1 : 1
             sprite.yScale = 1
             sprite.isHidden = false
-        }
-    }
 
-    private func captureFishVisuals(
-        from layouts: [FishLayout],
-        resolver: AquariumMetalMotionResolver
-    ) -> [BurstFishVisual] {
-        layouts.map { layout in
-            let frame = resolver.fishRenderRect(for: layout)
-            return BurstFishVisual(
-                species: layout.species,
-                scenePosition: scenePoint(from: CGPoint(x: frame.midX, y: frame.midY)),
-                renderSize: frame.size,
-                rotation: -CGFloat(layout.rotation) * .pi / 180,
-                isMirrored: layout.isMirrored
+            renderedVisuals.append(
+                BurstFishVisual(
+                    species: layout.species,
+                    scenePosition: root.position,
+                    renderSize: sprite.size,
+                    rotation: root.zRotation,
+                    isMirrored: layout.isMirrored
+                )
             )
         }
+
+        return renderedVisuals
     }
 
     private func burstAnimationProgress(for state: BurstAnimationState) -> CGFloat {
@@ -3701,8 +3949,7 @@ private final class AquariumSpriteScene: SKScene {
 
     private func syncFishBurstAnimation(
         _ state: BurstAnimationState,
-        progress: CGFloat,
-        snapshot: AquariumPetSnapshot
+        progress: CGFloat
     ) {
         syncNodeCount(&fishNodes, desiredCount: state.fishVisuals.count) {
             let root = SKNode()
@@ -3727,7 +3974,7 @@ private final class AquariumSpriteScene: SKScene {
             root.zRotation = visual.rotation
             root.isHidden = false
             vertical.xScale = 1
-            vertical.yScale = snapshot.bodyOvalScaleY
+            vertical.yScale = state.bodyOvalScaleY
             sprite.texture = fishTextures[visual.species]
             sprite.position = .zero
             sprite.zRotation = 0
@@ -3755,6 +4002,68 @@ private final class AquariumSpriteScene: SKScene {
             let node = fishNodes.removeLast()
             node.removeFromParent()
         }
+    }
+
+    private func blendedFoodResponse(current: FoodResponse?, at date: Date) -> FoodResponse? {
+        guard let recentFeedHandoff else { return current }
+
+        let elapsed = max(0, date.timeIntervalSince(recentFeedHandoff.startedAt))
+        let progress = CGFloat(min(max(elapsed / recentFeedHandoff.duration, 0), 1))
+
+        if progress >= 1 {
+            self.recentFeedHandoff = nil
+            return current
+        }
+
+        let easedProgress = smoothStep(from: 0, to: 1, value: progress)
+
+        guard let current else {
+            let remainingStrength = max(0, recentFeedHandoff.response.strength * (1 - easedProgress))
+            guard remainingStrength > 0.001 else { return nil }
+            return FoodResponse(
+                anchor: recentFeedHandoff.response.anchor,
+                strength: remainingStrength
+            )
+        }
+
+        return FoodResponse(
+            anchor: CGPoint(
+                x: recentFeedHandoff.response.anchor.x
+                + (current.anchor.x - recentFeedHandoff.response.anchor.x) * easedProgress,
+                y: recentFeedHandoff.response.anchor.y
+                + (current.anchor.y - recentFeedHandoff.response.anchor.y) * easedProgress
+            ),
+            strength: recentFeedHandoff.response.strength
+            + (current.strength - recentFeedHandoff.response.strength) * easedProgress
+        )
+    }
+
+    private func movePoint(_ current: CGPoint, toward target: CGPoint, maxDistance: CGFloat) -> CGPoint {
+        let dx = target.x - current.x
+        let dy = target.y - current.y
+        let distance = hypot(dx, dy)
+
+        guard distance > 0.001 else { return target }
+        guard distance > maxDistance, maxDistance > 0 else { return target }
+
+        let progress = maxDistance / distance
+        return CGPoint(
+            x: current.x + dx * progress,
+            y: current.y + dy * progress
+        )
+    }
+
+    private func moveAngle(_ current: CGFloat, toward target: CGFloat, maxStep: CGFloat) -> CGFloat {
+        var delta = target - current
+        while delta > .pi {
+            delta -= .pi * 2
+        }
+        while delta < -.pi {
+            delta += .pi * 2
+        }
+
+        guard abs(delta) > maxStep, maxStep > 0 else { return target }
+        return current + (delta > 0 ? maxStep : -maxStep)
     }
 
     private func syncBurstOverlay(progress: CGFloat?, fishVisuals: [BurstFishVisual]) {
@@ -4750,6 +5059,7 @@ private struct AquariumMetalMotionResolver {
     let feedBursts: [AquariumFeedBurst]
     let tapRipples: [AquariumTapRipple]
     let animationDate: Date?
+    let focusedFoodResponse: FoodResponse?
     let size: CGSize
 
     init(
@@ -4760,6 +5070,7 @@ private struct AquariumMetalMotionResolver {
         feedBursts: [AquariumFeedBurst],
         tapRipples: [AquariumTapRipple],
         animationDate: Date? = nil,
+        focusedFoodResponse: FoodResponse? = nil,
         size: CGSize
     ) {
         self.configuration = configuration
@@ -4769,6 +5080,7 @@ private struct AquariumMetalMotionResolver {
         self.feedBursts = feedBursts
         self.tapRipples = tapRipples
         self.animationDate = animationDate
+        self.focusedFoodResponse = focusedFoodResponse
         self.size = size
     }
 
@@ -4785,59 +5097,7 @@ private struct AquariumMetalMotionResolver {
     }
 
     func foodPellets() -> [AquariumFoodPellet] {
-        feedBursts.flatMap { burst in
-            let elapsed = motionDate.timeIntervalSince(burst.startedAt)
-            let dropDuration = AquariumFeedBurst.dropDuration
-            let grazeDuration = AquariumFeedBurst.grazeDuration
-            let releaseDuration = AquariumFeedBurst.releaseDuration
-            let settleDuration = AquariumFeedBurst.settleDuration
-            let totalDuration = AquariumFeedBurst.feedingCycleDuration
-            guard elapsed >= 0, elapsed <= totalDuration else { return [AquariumFoodPellet]() }
-
-            let dropProgress = min(max(elapsed / dropDuration, 0), 1)
-            let easedDrop = CGFloat(1 - pow(1 - dropProgress, 2))
-            let grazeProgress = CGFloat(min(max((elapsed - dropDuration) / grazeDuration, 0), 1))
-            let releaseProgress = CGFloat(min(max((elapsed - dropDuration - grazeDuration) / releaseDuration, 0), 1))
-            let settleProgress = CGFloat(min(max((elapsed - dropDuration - grazeDuration - releaseDuration) / settleDuration, 0), 1))
-
-            return (0..<3).map { index in
-                let spread = CGFloat(index - 1) * 0.026
-                let x = min(max(burst.xFraction + spread, 0.18), 0.82)
-                let restingDepth = 0.50 + CGFloat(index) * 0.07
-                let restingY = min(0.76, 0.08 + restingDepth)
-                let y: CGFloat
-                let visibility: CGFloat
-                let attraction: CGFloat
-
-                if elapsed < dropDuration {
-                    y = min(0.76, 0.08 + easedDrop * restingDepth)
-                    visibility = 1.0
-                    attraction = 0.36 + dropProgress * 0.28
-                } else if elapsed < dropDuration + grazeDuration {
-                    let bobAmount = 0.010 - grazeProgress * 0.004
-                    y = restingY + CGFloat(sin(Double(grazeProgress) * .pi * 2 + Double(index) * 0.8)) * bobAmount
-                    visibility = 0.96 - grazeProgress * 0.34
-                    attraction = 0.84 - grazeProgress * 0.08
-                } else if elapsed < dropDuration + grazeDuration + releaseDuration {
-                    y = restingY + CGFloat(sin(Double(releaseProgress) * .pi * 2 + Double(index) * 0.7)) * 0.004
-                    visibility = max(0.0, (1.0 - releaseProgress) * (1.0 - releaseProgress) * 0.48)
-                    attraction = max(0.18, pow(1.0 - releaseProgress, 1.15) * 0.68)
-                } else {
-                    y = restingY + CGFloat(sin(Double(settleProgress) * .pi * 1.6 + Double(index) * 0.7)) * 0.003
-                    visibility = 0.0
-                    attraction = max(0.01, pow(1.0 - settleProgress, 1.8) * 0.18)
-                }
-
-                let baseScale: CGFloat = index == 1 ? 1.0 : 0.84
-
-                return AquariumFoodPellet(
-                    xFraction: x,
-                    yFraction: y,
-                    scale: baseScale * visibility,
-                    attraction: attraction
-                )
-            }
-        }
+        resolveFeedBursts(feedBursts, at: motionDate).flatMap(pellets(for:))
     }
 
     func ripples() -> [AquariumVisibleTapRipple] {
@@ -4888,7 +5148,8 @@ private struct AquariumMetalMotionResolver {
         let baseX: [CGFloat]
         let baseY: [CGFloat]
         let scales: [CGFloat]
-        let foodResponse = foodResponse()
+        let activeFeedBurst = activeResolvedFeedBurst()
+        let activeFoodResponse = focusedFoodResponse ?? activeFeedBurst.flatMap { foodResponse(for: $0, in: size) }
         let laneWidth = size.width * (isCompactFormat ? 0.076 : (isAppIconFormat ? 0.064 : 0.096)) * personality.horizontalRangeMultiplier
         let verticalRange = size.height * (isCompactFormat ? 0.044 : (isAppIconFormat ? 0.038 : 0.058)) * personality.verticalRangeMultiplier
 
@@ -4933,27 +5194,46 @@ private struct AquariumMetalMotionResolver {
             let width = size.width * scales[index] * formatScale
             let height = width * 0.72
             let idleHeading = cos(cruisePhase) * 0.72 + cos(meanderPhase) * 0.28
-            let foodInterest = foodResponse.map {
+            let foodInterest = activeFoodResponse.map {
                 min(0.96, interestStrength($0.strength, index: index, count: count) * personality.foodInterestMultiplier)
             } ?? 0
-            let foodTarget = foodResponse.map {
+            let baseFoodTarget = activeFoodResponse.map {
                 foodTargetPosition(from: $0.anchor, index: index, count: count)
             } ?? idlePosition
-            let approachStrength = smoothStep(from: 0.0, to: 0.80, value: foodInterest)
-            let foodOrbitPosition = CGPoint(
-                x: foodTarget.x + sweep * laneWidth * max(0.12, 0.42 - approachStrength * 0.26) * max(0.38, driftScale),
-                y: foodTarget.y + bob * verticalRange * max(0.10, 0.30 - approachStrength * 0.18) * max(0.38, driftScale)
-            )
+            let baseApproachStrength = smoothStep(from: 0.0, to: 0.80, value: foodInterest)
+            let centerOffset = CGFloat(index) - CGFloat(count - 1) * 0.5
+
+            let (targetPosition, approachStrength): (CGPoint, CGFloat)
+            if case let .activeFeeding(progress)? = activeFeedBurst?.stage, focusedFoodResponse == nil {
+                let nibbleProgress = smoothStep(from: 0.06, to: 0.30, value: progress)
+                let nibbleFade = 1 - smoothStep(from: 0.55, to: 0.95, value: progress)
+                let nibblePhase = phase * 7.8 + Double(index) * 0.85
+                let nibbleX = centerOffset * size.width * 0.004
+                    + CGFloat(cos(nibblePhase)) * size.width * 0.003 * nibbleFade
+                let nibbleY = CGFloat(sin(nibblePhase)) * size.height * 0.004 * nibbleFade
+                targetPosition = CGPoint(
+                    x: baseFoodTarget.x + nibbleX,
+                    y: baseFoodTarget.y + nibbleY
+                )
+                approachStrength = max(baseApproachStrength, 0.94 + nibbleProgress * 0.04)
+            } else {
+                targetPosition = CGPoint(
+                    x: baseFoodTarget.x + sweep * laneWidth * max(0.12, 0.42 - baseApproachStrength * 0.26) * max(0.38, driftScale),
+                    y: baseFoodTarget.y + bob * verticalRange * max(0.10, 0.30 - baseApproachStrength * 0.18) * max(0.38, driftScale)
+                )
+                approachStrength = baseApproachStrength
+            }
+
             let unclampedLivePosition = CGPoint(
-                x: idlePosition.x + (foodOrbitPosition.x - idlePosition.x) * approachStrength,
-                y: idlePosition.y + (foodOrbitPosition.y - idlePosition.y) * approachStrength
+                x: idlePosition.x + (targetPosition.x - idlePosition.x) * approachStrength,
+                y: idlePosition.y + (targetPosition.y - idlePosition.y) * approachStrength
             )
             let livePosition = clampedFishPosition(
                 unclampedLivePosition,
                 species: species,
                 spriteScale: spriteScale
             )
-            let targetHeading = max(-1, min(1, Double((foodOrbitPosition.x - idlePosition.x) / max(size.width * 0.18, 1))))
+            let targetHeading = max(-1, min(1, Double((targetPosition.x - idlePosition.x) / max(size.width * 0.18, 1))))
             let heading = idleHeading * Double(1 - approachStrength) + targetHeading * Double(approachStrength)
             let deadPosition = clampedFishPosition(
                 CGPoint(
@@ -5304,26 +5584,14 @@ private struct AquariumMetalMotionResolver {
         return (halfWidth, topExtent, bottomExtent)
     }
 
-    private func foodResponse() -> FoodResponse? {
-        let pellets = foodPellets()
-        guard !pellets.isEmpty else { return nil }
+    private func activeResolvedFeedBurst() -> AquariumResolvedFeedBurst? {
+        resolveFeedBursts(feedBursts, at: motionDate)
+            .first(where: { $0.stage.isActive })
+    }
 
-        let xFraction = pellets.map(\.xFraction).reduce(0, +) / CGFloat(pellets.count)
-        let yFraction = pellets.map(\.yFraction).reduce(0, +) / CGFloat(pellets.count)
-        let attraction = pellets.map(\.attraction).reduce(0, +) / CGFloat(pellets.count)
-        let depthProgress = smoothStep(from: 0.18, to: 0.74, value: yFraction)
-        let freshness = smoothStep(from: 0.02, to: 0.82, value: attraction)
-        let strength = min(0.90, depthProgress * freshness)
-
-        guard strength > 0.008 else { return nil }
-
-        return FoodResponse(
-            anchor: CGPoint(
-                x: size.width * xFraction,
-                y: size.height * yFraction
-            ),
-            strength: strength
-        )
+    func activeFoodResponse() -> FoodResponse? {
+        activeResolvedFeedBurst()
+            .flatMap { foodResponse(for: $0, in: size) }
     }
 
     private func foodTargetPosition(from anchor: CGPoint, index: Int, count: Int) -> CGPoint {
