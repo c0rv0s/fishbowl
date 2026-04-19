@@ -317,7 +317,7 @@ private struct TankHomePage: View {
             return snapshot.isAlive
             ? "\(snapshot.mood.title) • \(subtitlePrompt)"
             : (snapshot.mood == .burst
-               ? "Popped • Delete this tank to make a new one"
+               ? "Exploded • Delete this tank to make a new one"
                : "Gone • Delete this tank to make a new one")
         }
     }

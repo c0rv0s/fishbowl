@@ -3884,8 +3884,17 @@ private final class AquariumSpriteScene: SKScene {
 
         let frameDuration = max(1.0 / 120.0, min(lastFrameDuration, 1.0 / 15.0))
         let hasFoodTarget = resolver.focusedFoodResponse != nil || resolver.activeFoodResponse() != nil
-        let maxTravelDistance = CGFloat(frameDuration) * (hasFoodTarget ? 260 : 120)
-        let maxRotationStep = CGFloat(frameDuration) * (hasFoodTarget ? .pi * 2.2 : .pi * 1.2)
+        let anticipationAmount = resolver.activeDropExcitement()
+        let maxTravelDistance = CGFloat(frameDuration) * (
+            hasFoodTarget
+            ? 260
+            : 120 + 70 * anticipationAmount
+        )
+        let maxRotationStep = CGFloat(frameDuration) * (
+            hasFoodTarget
+            ? .pi * 2.2
+            : .pi * (1.2 + 0.6 * anticipationAmount)
+        )
         var renderedVisuals: [BurstFishVisual] = []
         renderedVisuals.reserveCapacity(layouts.count)
 
@@ -4004,6 +4013,40 @@ private final class AquariumSpriteScene: SKScene {
         }
     }
 
+    private func arcedFoodHandoffPoint(
+        from source: CGPoint,
+        to destination: CGPoint,
+        progress: CGFloat
+    ) -> CGPoint {
+        let clampedProgress = min(max(progress, 0), 1)
+        let distance = hypot(destination.x - source.x, destination.y - source.y)
+        guard distance > 0.5 else {
+            return CGPoint(
+                x: source.x + (destination.x - source.x) * clampedProgress,
+                y: source.y + (destination.y - source.y) * clampedProgress
+            )
+        }
+
+        let lift = min(
+            size.height * 0.085,
+            max(size.height * 0.022, distance * 0.18)
+        )
+        let controlPoint = CGPoint(
+            x: (source.x + destination.x) * 0.5,
+            y: min(source.y, destination.y) - lift
+        )
+        let inverseProgress = 1 - clampedProgress
+
+        return CGPoint(
+            x: inverseProgress * inverseProgress * source.x
+                + 2 * inverseProgress * clampedProgress * controlPoint.x
+                + clampedProgress * clampedProgress * destination.x,
+            y: inverseProgress * inverseProgress * source.y
+                + 2 * inverseProgress * clampedProgress * controlPoint.y
+                + clampedProgress * clampedProgress * destination.y
+        )
+    }
+
     private func blendedFoodResponse(current: FoodResponse?, at date: Date) -> FoodResponse? {
         guard let recentFeedHandoff else { return current }
 
@@ -4027,11 +4070,10 @@ private final class AquariumSpriteScene: SKScene {
         }
 
         return FoodResponse(
-            anchor: CGPoint(
-                x: recentFeedHandoff.response.anchor.x
-                + (current.anchor.x - recentFeedHandoff.response.anchor.x) * easedProgress,
-                y: recentFeedHandoff.response.anchor.y
-                + (current.anchor.y - recentFeedHandoff.response.anchor.y) * easedProgress
+            anchor: arcedFoodHandoffPoint(
+                from: recentFeedHandoff.response.anchor,
+                to: current.anchor,
+                progress: easedProgress
             ),
             strength: recentFeedHandoff.response.strength
             + (current.strength - recentFeedHandoff.response.strength) * easedProgress
@@ -5149,7 +5191,8 @@ private struct AquariumMetalMotionResolver {
         let baseY: [CGFloat]
         let scales: [CGFloat]
         let activeFeedBurst = activeResolvedFeedBurst()
-        let activeFoodResponse = focusedFoodResponse ?? activeFeedBurst.flatMap { foodResponse(for: $0, in: size) }
+        let activeFoodResponse = focusedFoodResponse ?? self.activeFoodResponse()
+        let dropExcitement = activeDropExcitement()
         let laneWidth = size.width * (isCompactFormat ? 0.076 : (isAppIconFormat ? 0.064 : 0.096)) * personality.horizontalRangeMultiplier
         let verticalRange = size.height * (isCompactFormat ? 0.044 : (isAppIconFormat ? 0.038 : 0.058)) * personality.verticalRangeMultiplier
 
@@ -5202,24 +5245,62 @@ private struct AquariumMetalMotionResolver {
             } ?? idlePosition
             let baseApproachStrength = smoothStep(from: 0.0, to: 0.80, value: foodInterest)
             let centerOffset = CGFloat(index) - CGFloat(count - 1) * 0.5
+            let biteHoldTarget = CGPoint(
+                x: baseFoodTarget.x + centerOffset * size.width * 0.004,
+                y: baseFoodTarget.y
+            )
+            let orbitTarget = CGPoint(
+                x: baseFoodTarget.x + sweep * laneWidth * max(0.12, 0.42 - baseApproachStrength * 0.26) * max(0.38, driftScale),
+                y: baseFoodTarget.y + bob * verticalRange * max(0.10, 0.30 - baseApproachStrength * 0.18) * max(0.38, driftScale)
+            )
+            let anticipationPhase = phase * effectiveMotionScale * (1.72 + Double(index) * 0.08) + Double(index) * 2.1
+            let anticipationSweep = CGFloat(
+                sin(anticipationPhase) * 0.68
+                + cos(anticipationPhase * 1.86 + 0.7) * 0.32
+            )
+            let anticipationBob = CGFloat(
+                cos(anticipationPhase * 1.28 + 0.4) * 0.58
+                + sin(anticipationPhase * 2.14 + 1.3) * 0.42
+            )
+            let anticipationTarget = CGPoint(
+                x: idlePosition.x
+                    + anticipationSweep
+                    * laneWidth
+                    * (0.20 + dropExcitement * 0.46)
+                    * max(0.42, driftScale),
+                y: idlePosition.y
+                    + anticipationBob
+                    * verticalRange
+                    * (0.16 + dropExcitement * 0.34)
+                    * max(0.42, driftScale)
+                    - size.height * 0.010 * dropExcitement
+            )
+
+            let baseLandingBlend = smoothStep(from: 0.52, to: 0.90, value: baseApproachStrength)
 
             let (targetPosition, approachStrength): (CGPoint, CGFloat)
-            if case let .activeFeeding(progress)? = activeFeedBurst?.stage, focusedFoodResponse == nil {
-                let nibbleProgress = smoothStep(from: 0.06, to: 0.30, value: progress)
-                let nibbleFade = 1 - smoothStep(from: 0.55, to: 0.95, value: progress)
+            if activeFoodResponse != nil,
+               case let .activeFeeding(progress)? = activeFeedBurst?.stage,
+               focusedFoodResponse == nil {
+                let nibbleProgress = smoothStep(from: 0.08, to: 0.32, value: progress)
+                let nibbleFade = smoothStep(from: 0.16, to: 0.40, value: progress)
+                    * (1 - smoothStep(from: 0.62, to: 0.95, value: progress))
                 let nibblePhase = phase * 7.8 + Double(index) * 0.85
                 let nibbleX = centerOffset * size.width * 0.004
                     + CGFloat(cos(nibblePhase)) * size.width * 0.003 * nibbleFade
                 let nibbleY = CGFloat(sin(nibblePhase)) * size.height * 0.004 * nibbleFade
                 targetPosition = CGPoint(
-                    x: baseFoodTarget.x + nibbleX,
-                    y: baseFoodTarget.y + nibbleY
+                    x: biteHoldTarget.x + nibbleX - centerOffset * size.width * 0.004,
+                    y: biteHoldTarget.y + nibbleY
                 )
-                approachStrength = max(baseApproachStrength, 0.94 + nibbleProgress * 0.04)
+                approachStrength = max(baseApproachStrength, 0.97 + nibbleProgress * 0.03)
+            } else if dropExcitement > 0 {
+                targetPosition = anticipationTarget
+                approachStrength = smoothStep(from: 0.0, to: 0.84, value: dropExcitement) * 0.86
             } else {
                 targetPosition = CGPoint(
-                    x: baseFoodTarget.x + sweep * laneWidth * max(0.12, 0.42 - baseApproachStrength * 0.26) * max(0.38, driftScale),
-                    y: baseFoodTarget.y + bob * verticalRange * max(0.10, 0.30 - baseApproachStrength * 0.18) * max(0.38, driftScale)
+                    x: orbitTarget.x + (biteHoldTarget.x - orbitTarget.x) * baseLandingBlend,
+                    y: orbitTarget.y + (biteHoldTarget.y - orbitTarget.y) * baseLandingBlend
                 )
                 approachStrength = baseApproachStrength
             }
@@ -5584,14 +5665,37 @@ private struct AquariumMetalMotionResolver {
         return (halfWidth, topExtent, bottomExtent)
     }
 
+    private func settledFoodResponse(for burst: AquariumFeedBurst) -> FoodResponse {
+        let settledYFractions = (0..<3).map { index in
+            min(0.76, 0.08 + 0.50 + CGFloat(index) * 0.07)
+        }
+        let averageY = settledYFractions.reduce(0, +) / CGFloat(settledYFractions.count)
+
+        return FoodResponse(
+            anchor: CGPoint(
+                x: size.width * burst.xFraction,
+                y: size.height * averageY
+            ),
+            strength: 0.90
+        )
+    }
+
     private func activeResolvedFeedBurst() -> AquariumResolvedFeedBurst? {
         resolveFeedBursts(feedBursts, at: motionDate)
             .first(where: { $0.stage.isActive })
     }
 
     func activeFoodResponse() -> FoodResponse? {
-        activeResolvedFeedBurst()
-            .flatMap { foodResponse(for: $0, in: size) }
+        guard let activeBurst = activeResolvedFeedBurst() else { return nil }
+        guard case .activeFeeding = activeBurst.stage else { return nil }
+        return settledFoodResponse(for: activeBurst.scheduled.burst)
+    }
+
+    func activeDropExcitement() -> CGFloat {
+        guard focusedFoodResponse == nil,
+              let activeBurst = activeResolvedFeedBurst() else { return 0 }
+        guard case let .activeDropping(progress) = activeBurst.stage else { return 0 }
+        return smoothStep(from: 0.06, to: 0.92, value: progress)
     }
 
     private func foodTargetPosition(from anchor: CGPoint, index: Int, count: Int) -> CGPoint {

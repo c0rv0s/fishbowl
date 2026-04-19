@@ -53,7 +53,7 @@ enum AquariumPetMood: String, Codable, Hashable, Sendable {
         case .dead:
             return "Gone"
         case .burst:
-            return "Popped"
+            return "Exploded"
         }
     }
 }
