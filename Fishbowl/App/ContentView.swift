@@ -1368,7 +1368,7 @@ private enum HumBowlGenerator {
         case .hush:
             return HumBowlRecipe(
                 vesselPool: [.orb, .gallery],
-                fishPool: [.royalBetta, .glassGold, .opalAngelfish],
+                fishPool: [.royalBetta, .glassGold, .opalAngelfish, .sunsetRasbora],
                 substratePool: [.pearlSand, .moonGravel],
                 decorationPool: [.minimal, .glassPearls],
                 featurePool: [.bubbleStone, .moonLantern],
@@ -1381,7 +1381,7 @@ private enum HumBowlGenerator {
         case .tide:
             return HumBowlRecipe(
                 vesselPool: [.orb, .panorama],
-                fishPool: [.moonKoi, .leopardShark, .glassGold],
+                fishPool: [.moonKoi, .leopardShark, .glassGold, .silverArowana, .humpbackWhale],
                 substratePool: [.obsidianSand, .moonGravel],
                 decorationPool: [.riverRocks, .glassPearls],
                 featurePool: [.driftwoodArch, .moonLantern, .kelp],
@@ -1394,7 +1394,7 @@ private enum HumBowlGenerator {
         case .bloom:
             return HumBowlRecipe(
                 vesselPool: [.gallery, .panorama],
-                fishPool: [.moonKoi, .opalAngelfish, .glassGold, .royalBetta],
+                fishPool: [.moonKoi, .opalAngelfish, .glassGold, .royalBetta, .velvetDiscus],
                 substratePool: [.pearlSand, .coralBloom, .moonGravel],
                 decorationPool: [.glassPearls, .riverRocks, .coralGarden],
                 featurePool: [.moonLantern, .bubbleStone, .kelp],
@@ -1407,7 +1407,7 @@ private enum HumBowlGenerator {
         case .spark:
             return HumBowlRecipe(
                 vesselPool: [.panorama, .gallery],
-                fishPool: [.neonGuppy, .emberTetra, .opalAngelfish, .moonKoi],
+                fishPool: [.neonGuppy, .emberTetra, .opalAngelfish, .moonKoi, .sunsetRasbora],
                 substratePool: [.obsidianSand, .coralBloom, .moonGravel],
                 decorationPool: [.coralGarden, .glassPearls, .riverRocks],
                 featurePool: [.kelp, .moonLantern, .driftwoodArch],
@@ -2061,7 +2061,7 @@ private struct PremiumUpsellPage: View {
 
                         VStack(alignment: .leading, spacing: 8) {
                             PremiumBullet(text: "Up to 12 saved tanks instead of 3")
-                            PremiumBullet(text: "Mixed-species schools with the premium fish set")
+                            PremiumBullet(text: "Mixed-species schools with an expanded premium fish set")
                             PremiumBullet(text: "Feature pieces like driftwood, lanterns, and kelp")
                         }
 
@@ -3402,7 +3402,7 @@ private struct PremiumUnlockSheet: View {
                             VStack(alignment: .leading, spacing: 14) {
                                 PremiumBullet(text: "Save up to 12 tanks instead of 3")
                                 PremiumBullet(text: "Mix different fish species together in the same tank")
-                                PremiumBullet(text: "Unlock Panorama Tank, Leopard Shark, Glass Goldfish, and Opal Angelfish")
+                                PremiumBullet(text: "Unlock Panorama Tank plus premium fish like Leopard Shark, Glass Goldfish, Sunset Rasbora, Velvet Discus, Silver Arowana, and Humpback Whale")
                                 PremiumBullet(text: "Unlock Coral Garden, Glass Pearls, Moon Gravel, Coral Bloom, Shrimp, and Crab")
                                 PremiumBullet(text: "Add feature pieces like driftwood arches, moon lanterns, and kelp")
                             }

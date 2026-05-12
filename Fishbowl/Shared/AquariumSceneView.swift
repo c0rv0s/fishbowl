@@ -643,7 +643,7 @@ private struct AquariumInteriorView: View {
 
         if format == .widgetSmall || format == .widgetMedium {
             switch species {
-            case .royalBetta, .opalAngelfish, .leopardShark:
+            case .royalBetta, .opalAngelfish, .leopardShark, .velvetDiscus, .silverArowana, .humpbackWhale:
                 return baseScale * 0.94
             default:
                 return baseScale
@@ -715,6 +715,12 @@ private struct AquariumInteriorView: View {
 
         if species == .royalBetta {
             halfWidth += 2 * spriteScale
+        }
+
+        if species == .humpbackWhale {
+            halfWidth += 6 * spriteScale
+            topExtent = max(topExtent, species.bodyHeight * 0.96 * spriteScale + 4 * spriteScale)
+            bottomExtent = max(bottomExtent, species.bodyHeight * 1.28 * spriteScale + 4 * spriteScale)
         }
 
         return (halfWidth, topExtent, bottomExtent)
@@ -1551,12 +1557,30 @@ private struct FishSprite: View {
     let bodyOvalScaleY: CGFloat
 
     var body: some View {
+        Group {
+            if species == .humpbackWhale {
+                HumpbackWhaleSprite(
+                    primary: species.palette[0],
+                    secondary: species.palette[1],
+                    highlight: species.palette[2],
+                    vitality: vitality,
+                    bodyWidth: species.bodyWidth,
+                    bodyHeight: species.bodyHeight * bodyOvalScaleY
+                )
+            } else {
+                genericSprite
+            }
+        }
+        .saturation(isAlive ? 0.58 + vitality * 0.42 : 0.12)
+    }
+
+    private var genericSprite: some View {
         let tailWidth = species.bodyWidth * 0.92 * species.tailScale
         let tailHeight = species.bodyHeight * 1.8 * species.tailScale
         let upperFinHeight = species.bodyHeight * 1.1 * species.finHeightMultiplier
         let lowerFinHeight = species.bodyHeight * 0.92 * species.finHeightMultiplier
 
-        ZStack {
+        return ZStack {
                     TailShape()
                         .fill(
                             LinearGradient(
@@ -1614,11 +1638,33 @@ private struct FishSprite: View {
                         .rotationEffect(.degrees(34))
                         .offset(x: -2, y: species.bodyHeight * 0.48)
 
+                    if species == .sunsetRasbora {
+                        ForEach(0..<2, id: \.self) { index in
+                            Capsule(style: .continuous)
+                                .fill(species.palette[2].opacity(index == 0 ? 0.38 : 0.28))
+                                .frame(width: species.bodyWidth * 0.10, height: species.bodyHeight * 0.90)
+                                .rotationEffect(.degrees(-18))
+                                .offset(x: -2 + CGFloat(index) * 8, y: -1)
+                        }
+                    }
+
                     if species == .moonKoi || species == .glassGold {
                         Circle()
                             .fill(species.palette[2].opacity(0.34))
                             .frame(width: species.bodyWidth * 0.26)
                             .offset(x: 6, y: -2)
+                    }
+
+                    if species == .velvetDiscus {
+                        Circle()
+                            .fill(species.palette[2].opacity(0.20))
+                            .frame(width: species.bodyHeight * 0.82)
+                            .offset(x: 2, y: -1)
+
+                        Capsule(style: .continuous)
+                            .fill(species.palette[1].opacity(0.24))
+                            .frame(width: species.bodyWidth * 0.14, height: species.bodyHeight * 0.94)
+                            .offset(x: -1)
                     }
 
                     if species == .opalAngelfish {
@@ -1631,6 +1677,19 @@ private struct FishSprite: View {
                             .fill(species.palette[2].opacity(0.34))
                             .frame(width: 2.4, height: species.bodyHeight * 1.15)
                             .offset(x: -4, y: species.bodyHeight * 0.96)
+                    }
+
+                    if species == .silverArowana {
+                        Capsule(style: .continuous)
+                            .fill(species.palette[2].opacity(0.42))
+                            .frame(width: species.bodyWidth * 0.58, height: species.bodyHeight * 0.18)
+                            .offset(x: 4, y: -species.bodyHeight * 0.16)
+
+                        Triangle()
+                            .fill(species.palette[1].opacity(0.74))
+                            .frame(width: species.bodyWidth * 0.18, height: species.bodyHeight * 0.42)
+                            .rotationEffect(.degrees(-10))
+                            .offset(x: 5, y: -species.bodyHeight * 0.52)
                     }
 
                     if species == .leopardShark {
@@ -1657,7 +1716,142 @@ private struct FishSprite: View {
                         }
                     }
         }
-        .saturation(isAlive ? 0.58 + vitality * 0.42 : 0.12)
+    }
+}
+
+private struct HumpbackWhaleSprite: View {
+    let primary: Color
+    let secondary: Color
+    let highlight: Color
+    let vitality: Double
+    let bodyWidth: CGFloat
+    let bodyHeight: CGFloat
+
+    var body: some View {
+        ZStack {
+            WhaleFlukeShape()
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            secondary.opacity(0.56 + vitality * 0.24),
+                            primary.opacity(0.84),
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .frame(width: bodyWidth * 0.40, height: bodyHeight * 1.02)
+                .offset(x: bodyWidth * 0.46)
+
+            HumpbackWhaleBodyShape()
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            primary.opacity(0.62 + vitality * 0.22),
+                            secondary.opacity(0.68 + vitality * 0.22),
+                            primary.opacity(0.90),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .frame(width: bodyWidth, height: bodyHeight * 1.02)
+                .overlay {
+                    HumpbackWhaleBodyShape()
+                        .stroke(highlight.opacity(0.16), lineWidth: 0.8)
+                }
+                .offset(x: -4)
+
+            HumpbackWhaleBellyShape()
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            highlight.opacity(0.84),
+                            highlight.opacity(0.18),
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .frame(width: bodyWidth * 0.76, height: bodyHeight * 0.52)
+                .offset(x: -bodyWidth * 0.08, y: bodyHeight * 0.16)
+
+            WhalePectoralFinShape()
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            highlight.opacity(0.92),
+                            secondary.opacity(0.58),
+                            primary.opacity(0.78),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .frame(width: bodyWidth * 0.26, height: bodyHeight * 1.00)
+                .rotationEffect(.degrees(14))
+                .offset(x: -bodyWidth * 0.12, y: bodyHeight * 0.38)
+
+            WhalePectoralFinShape()
+                .fill(secondary.opacity(0.28))
+                .frame(width: bodyWidth * 0.19, height: bodyHeight * 0.74)
+                .rotationEffect(.degrees(-18))
+                .offset(x: -bodyWidth * 0.02, y: bodyHeight * 0.18)
+
+            Triangle()
+                .fill(primary.opacity(0.90))
+                .frame(width: bodyWidth * 0.10, height: bodyHeight * 0.20)
+                .rotationEffect(.degrees(-6))
+                .offset(x: bodyWidth * 0.18, y: -bodyHeight * 0.34)
+
+            Ellipse()
+                .fill(primary.opacity(0.78))
+                .frame(width: bodyWidth * 0.20, height: bodyHeight * 0.18)
+                .offset(x: bodyWidth * 0.08, y: -bodyHeight * 0.24)
+
+            ForEach(0..<5, id: \.self) { index in
+                Capsule(style: .continuous)
+                    .fill(highlight.opacity(index == 0 ? 0.50 : 0.38))
+                    .frame(width: bodyWidth * 0.16, height: 1.4)
+                    .rotationEffect(.degrees(-16))
+                    .offset(
+                        x: -bodyWidth * 0.24 + CGFloat(index) * bodyWidth * 0.034,
+                        y: bodyHeight * (0.12 + CGFloat(index) * 0.045)
+                    )
+            }
+
+            Capsule(style: .continuous)
+                .fill(highlight.opacity(0.26))
+                .frame(width: bodyWidth * 0.18, height: 1.5)
+                .rotationEffect(.degrees(8))
+                .offset(x: -bodyWidth * 0.33, y: bodyHeight * 0.16)
+
+            Capsule(style: .continuous)
+                .fill(primary.opacity(0.54))
+                .frame(width: bodyWidth * 0.14, height: 1.2)
+                .rotationEffect(.degrees(12))
+                .offset(x: -bodyWidth * 0.33, y: bodyHeight * 0.19)
+
+            Circle()
+                .fill(Color.white.opacity(0.95))
+                .frame(width: 3.8)
+                .overlay {
+                    Circle()
+                        .fill(Color.black.opacity(0.76))
+                        .frame(width: 2.0)
+                }
+                .offset(x: -bodyWidth * 0.33, y: -bodyHeight * 0.02)
+
+            ForEach(0..<4, id: \.self) { index in
+                Circle()
+                    .fill(highlight.opacity(index == 0 ? 0.46 : 0.30))
+                    .frame(width: index == 0 ? 2.8 : 2.1)
+                    .offset(
+                        x: -bodyWidth * (0.44 - CGFloat(index) * 0.055),
+                        y: -bodyHeight * (0.16 + CGFloat(index % 2) * 0.04)
+                    )
+            }
+        }
     }
 }
 
@@ -2922,6 +3116,132 @@ private struct SandbedShape: Shape {
             to: CGPoint(x: rect.minX, y: rect.minY + rect.height * 0.42),
             control1: CGPoint(x: rect.maxX * 0.74, y: rect.minY + rect.height * (0.02 + curve)),
             control2: CGPoint(x: rect.maxX * 0.26, y: rect.minY + rect.height * (0.78 - curve))
+        )
+        path.closeSubpath()
+        return path
+    }
+}
+
+private struct HumpbackWhaleBodyShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX + rect.width * 0.02, y: rect.minY + rect.height * 0.49))
+        path.addCurve(
+            to: CGPoint(x: rect.minX + rect.width * 0.30, y: rect.minY + rect.height * 0.20),
+            control1: CGPoint(x: rect.minX + rect.width * 0.04, y: rect.minY + rect.height * 0.24),
+            control2: CGPoint(x: rect.minX + rect.width * 0.17, y: rect.minY + rect.height * 0.12)
+        )
+        path.addCurve(
+            to: CGPoint(x: rect.minX + rect.width * 0.82, y: rect.minY + rect.height * 0.39),
+            control1: CGPoint(x: rect.minX + rect.width * 0.48, y: rect.minY + rect.height * 0.14),
+            control2: CGPoint(x: rect.minX + rect.width * 0.70, y: rect.minY + rect.height * 0.24)
+        )
+        path.addCurve(
+            to: CGPoint(x: rect.minX + rect.width * 0.95, y: rect.minY + rect.height * 0.48),
+            control1: CGPoint(x: rect.minX + rect.width * 0.90, y: rect.minY + rect.height * 0.42),
+            control2: CGPoint(x: rect.minX + rect.width * 0.94, y: rect.minY + rect.height * 0.45)
+        )
+        path.addCurve(
+            to: CGPoint(x: rect.minX + rect.width * 0.77, y: rect.minY + rect.height * 0.60),
+            control1: CGPoint(x: rect.minX + rect.width * 0.94, y: rect.minY + rect.height * 0.54),
+            control2: CGPoint(x: rect.minX + rect.width * 0.86, y: rect.minY + rect.height * 0.61)
+        )
+        path.addCurve(
+            to: CGPoint(x: rect.minX + rect.width * 0.34, y: rect.minY + rect.height * 0.72),
+            control1: CGPoint(x: rect.minX + rect.width * 0.62, y: rect.minY + rect.height * 0.69),
+            control2: CGPoint(x: rect.minX + rect.width * 0.46, y: rect.minY + rect.height * 0.74)
+        )
+        path.addCurve(
+            to: CGPoint(x: rect.minX + rect.width * 0.04, y: rect.minY + rect.height * 0.60),
+            control1: CGPoint(x: rect.minX + rect.width * 0.18, y: rect.minY + rect.height * 0.72),
+            control2: CGPoint(x: rect.minX + rect.width * 0.07, y: rect.minY + rect.height * 0.67)
+        )
+        path.addCurve(
+            to: CGPoint(x: rect.minX + rect.width * 0.02, y: rect.minY + rect.height * 0.49),
+            control1: CGPoint(x: rect.minX + rect.width * 0.02, y: rect.minY + rect.height * 0.57),
+            control2: CGPoint(x: rect.minX + rect.width * 0.01, y: rect.minY + rect.height * 0.53)
+        )
+        path.closeSubpath()
+        return path
+    }
+}
+
+private struct HumpbackWhaleBellyShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX + rect.width * 0.04, y: rect.minY + rect.height * 0.50))
+        path.addCurve(
+            to: CGPoint(x: rect.minX + rect.width * 0.76, y: rect.minY + rect.height * 0.64),
+            control1: CGPoint(x: rect.minX + rect.width * 0.24, y: rect.minY + rect.height * 0.52),
+            control2: CGPoint(x: rect.minX + rect.width * 0.54, y: rect.minY + rect.height * 0.70)
+        )
+        path.addCurve(
+            to: CGPoint(x: rect.minX + rect.width * 0.70, y: rect.minY + rect.height * 0.78),
+            control1: CGPoint(x: rect.minX + rect.width * 0.78, y: rect.minY + rect.height * 0.70),
+            control2: CGPoint(x: rect.minX + rect.width * 0.76, y: rect.minY + rect.height * 0.76)
+        )
+        path.addCurve(
+            to: CGPoint(x: rect.minX + rect.width * 0.12, y: rect.minY + rect.height * 0.66),
+            control1: CGPoint(x: rect.minX + rect.width * 0.48, y: rect.minY + rect.height * 0.84),
+            control2: CGPoint(x: rect.minX + rect.width * 0.22, y: rect.minY + rect.height * 0.72)
+        )
+        path.addCurve(
+            to: CGPoint(x: rect.minX + rect.width * 0.04, y: rect.minY + rect.height * 0.50),
+            control1: CGPoint(x: rect.minX + rect.width * 0.06, y: rect.minY + rect.height * 0.62),
+            control2: CGPoint(x: rect.minX + rect.width * 0.02, y: rect.minY + rect.height * 0.56)
+        )
+        path.closeSubpath()
+        return path
+    }
+}
+
+private struct WhalePectoralFinShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX + rect.width * 0.18, y: rect.minY + rect.height * 0.06))
+        path.addCurve(
+            to: CGPoint(x: rect.minX + rect.width * 0.92, y: rect.minY + rect.height * 0.96),
+            control1: CGPoint(x: rect.minX + rect.width * 0.24, y: rect.minY + rect.height * 0.32),
+            control2: CGPoint(x: rect.minX + rect.width * 0.86, y: rect.minY + rect.height * 0.74)
+        )
+        path.addCurve(
+            to: CGPoint(x: rect.minX + rect.width * 0.38, y: rect.minY + rect.height * 0.82),
+            control1: CGPoint(x: rect.minX + rect.width * 0.78, y: rect.minY + rect.height * 0.98),
+            control2: CGPoint(x: rect.minX + rect.width * 0.52, y: rect.minY + rect.height * 0.92)
+        )
+        path.addCurve(
+            to: CGPoint(x: rect.minX + rect.width * 0.18, y: rect.minY + rect.height * 0.06),
+            control1: CGPoint(x: rect.minX + rect.width * 0.26, y: rect.minY + rect.height * 0.58),
+            control2: CGPoint(x: rect.minX + rect.width * 0.12, y: rect.minY + rect.height * 0.24)
+        )
+        path.closeSubpath()
+        return path
+    }
+}
+
+private struct WhaleFlukeShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX + rect.width * 0.08, y: rect.midY))
+        path.addCurve(
+            to: CGPoint(x: rect.minX + rect.width * 0.96, y: rect.minY + rect.height * 0.08),
+            control1: CGPoint(x: rect.minX + rect.width * 0.32, y: rect.minY + rect.height * 0.18),
+            control2: CGPoint(x: rect.minX + rect.width * 0.78, y: rect.minY + rect.height * 0.02)
+        )
+        path.addCurve(
+            to: CGPoint(x: rect.minX + rect.width * 0.64, y: rect.midY),
+            control1: CGPoint(x: rect.minX + rect.width * 0.90, y: rect.minY + rect.height * 0.26),
+            control2: CGPoint(x: rect.minX + rect.width * 0.76, y: rect.minY + rect.height * 0.36)
+        )
+        path.addCurve(
+            to: CGPoint(x: rect.minX + rect.width * 0.96, y: rect.minY + rect.height * 0.92),
+            control1: CGPoint(x: rect.minX + rect.width * 0.76, y: rect.minY + rect.height * 0.64),
+            control2: CGPoint(x: rect.minX + rect.width * 0.90, y: rect.minY + rect.height * 0.74)
+        )
+        path.addCurve(
+            to: CGPoint(x: rect.minX + rect.width * 0.08, y: rect.midY),
+            control1: CGPoint(x: rect.minX + rect.width * 0.78, y: rect.minY + rect.height * 0.98),
+            control2: CGPoint(x: rect.minX + rect.width * 0.30, y: rect.minY + rect.height * 0.82)
         )
         path.closeSubpath()
         return path
@@ -5598,7 +5918,7 @@ private struct AquariumMetalMotionResolver {
 
         if format == .widgetSmall || format == .widgetMedium {
             switch species {
-            case .royalBetta, .opalAngelfish, .leopardShark:
+            case .royalBetta, .opalAngelfish, .leopardShark, .velvetDiscus, .silverArowana, .humpbackWhale:
                 return baseScale * 0.94
             default:
                 return baseScale
@@ -5668,6 +5988,12 @@ private struct AquariumMetalMotionResolver {
 
         if species == .royalBetta {
             halfWidth += 2 * spriteScale
+        }
+
+        if species == .humpbackWhale {
+            halfWidth += 6 * spriteScale
+            topExtent = max(topExtent, species.bodyHeight * 0.96 * spriteScale + 4 * spriteScale)
+            bottomExtent = max(bottomExtent, species.bodyHeight * 1.28 * spriteScale + 4 * spriteScale)
         }
 
         return (halfWidth, topExtent, bottomExtent)

@@ -336,10 +336,18 @@ struct AquariumPetState: Hashable, Codable, Sendable {
 
     private func babySpecies(for configuration: AquariumConfiguration, at date: Date) -> FishSpecies? {
         let lineup = configuration.resolvedFishSpecies
-        guard lineup.count >= 2, Set(lineup).count == 1 else { return nil }
+        guard lineup.count >= 2 else { return nil }
         guard date.timeIntervalSince(startedAt) >= Self.babyAfterAge else { return nil }
         guard feedCount >= Self.babyAfterFeedCount else { return nil }
-        return lineup.first
+
+        var counts: [FishSpecies: Int] = [:]
+        for species in lineup {
+            counts[species, default: 0] += 1
+        }
+
+        return lineup.first { species in
+            (counts[species] ?? 0) >= 2
+        }
     }
 }
 

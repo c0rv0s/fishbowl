@@ -59,11 +59,15 @@ enum AquariumVesselStyle: String, CaseIterable, Codable, Hashable, Identifiable,
 enum FishSpecies: String, CaseIterable, Hashable, Identifiable, Sendable, AppEnum {
     case royalBetta
     case moonKoi
+    case sunsetRasbora
     case glassGold
     case neonGuppy
     case emberTetra
     case opalAngelfish
     case leopardShark
+    case velvetDiscus
+    case silverArowana
+    case humpbackWhale
 
     var id: Self { self }
 
@@ -73,6 +77,8 @@ enum FishSpecies: String, CaseIterable, Hashable, Identifiable, Sendable, AppEnu
             return "Royal Betta"
         case .moonKoi:
             return "Moon Koi"
+        case .sunsetRasbora:
+            return "Sunset Rasbora"
         case .glassGold:
             return "Glass Goldfish"
         case .neonGuppy:
@@ -83,6 +89,12 @@ enum FishSpecies: String, CaseIterable, Hashable, Identifiable, Sendable, AppEnu
             return "Opal Angelfish"
         case .leopardShark:
             return "Leopard Shark"
+        case .velvetDiscus:
+            return "Velvet Discus"
+        case .silverArowana:
+            return "Silver Arowana"
+        case .humpbackWhale:
+            return "Humpback Whale"
         }
     }
 
@@ -92,6 +104,8 @@ enum FishSpecies: String, CaseIterable, Hashable, Identifiable, Sendable, AppEnu
             return "Cobalt fins with deep electric contrast."
         case .moonKoi:
             return "Pearl and coral swirls with luxury warmth."
+        case .sunsetRasbora:
+            return "A tiny sunset shimmer with punchy coral stripes."
         case .glassGold:
             return "Champagne metallic tones with soft translucency."
         case .neonGuppy:
@@ -102,6 +116,12 @@ enum FishSpecies: String, CaseIterable, Hashable, Identifiable, Sendable, AppEnu
             return "Tall fins and cool iridescence for a couture look."
         case .leopardShark:
             return "A tiny spotted shark with sleek silver movement."
+        case .velvetDiscus:
+            return "A rounded velvet jewel with plum and lilac depth."
+        case .silverArowana:
+            return "A long mirrored swimmer with icy silver flash."
+        case .humpbackWhale:
+            return "A miniature whale silhouette with deep ocean blue and a bright underbelly."
         }
     }
 
@@ -118,6 +138,12 @@ enum FishSpecies: String, CaseIterable, Hashable, Identifiable, Sendable, AppEnu
                 Color(red: 0.98, green: 0.46, blue: 0.40),
                 Color(red: 0.99, green: 0.72, blue: 0.45),
                 Color(red: 0.98, green: 0.93, blue: 0.89),
+            ]
+        case .sunsetRasbora:
+            return [
+                Color(red: 0.92, green: 0.22, blue: 0.34),
+                Color(red: 1.00, green: 0.50, blue: 0.31),
+                Color(red: 1.00, green: 0.83, blue: 0.52),
             ]
         case .glassGold:
             return [
@@ -149,6 +175,24 @@ enum FishSpecies: String, CaseIterable, Hashable, Identifiable, Sendable, AppEnu
                 Color(red: 0.67, green: 0.73, blue: 0.80),
                 Color(red: 0.93, green: 0.96, blue: 0.98),
             ]
+        case .velvetDiscus:
+            return [
+                Color(red: 0.31, green: 0.20, blue: 0.45),
+                Color(red: 0.58, green: 0.39, blue: 0.74),
+                Color(red: 0.91, green: 0.84, blue: 0.98),
+            ]
+        case .silverArowana:
+            return [
+                Color(red: 0.34, green: 0.39, blue: 0.46),
+                Color(red: 0.71, green: 0.80, blue: 0.88),
+                Color(red: 0.93, green: 0.97, blue: 1.00),
+            ]
+        case .humpbackWhale:
+            return [
+                Color(red: 0.16, green: 0.22, blue: 0.31),
+                Color(red: 0.37, green: 0.54, blue: 0.67),
+                Color(red: 0.92, green: 0.96, blue: 0.98),
+            ]
         }
     }
 
@@ -158,6 +202,8 @@ enum FishSpecies: String, CaseIterable, Hashable, Identifiable, Sendable, AppEnu
             return 46
         case .moonKoi:
             return 50
+        case .sunsetRasbora:
+            return 39
         case .glassGold:
             return 47
         case .neonGuppy:
@@ -168,6 +214,12 @@ enum FishSpecies: String, CaseIterable, Hashable, Identifiable, Sendable, AppEnu
             return 36
         case .leopardShark:
             return 54
+        case .velvetDiscus:
+            return 42
+        case .silverArowana:
+            return 58
+        case .humpbackWhale:
+            return 66
         }
     }
 
@@ -177,6 +229,8 @@ enum FishSpecies: String, CaseIterable, Hashable, Identifiable, Sendable, AppEnu
             return 28
         case .moonKoi:
             return 30
+        case .sunsetRasbora:
+            return 19
         case .glassGold:
             return 31
         case .neonGuppy:
@@ -187,6 +241,12 @@ enum FishSpecies: String, CaseIterable, Hashable, Identifiable, Sendable, AppEnu
             return 29
         case .leopardShark:
             return 18
+        case .velvetDiscus:
+            return 34
+        case .silverArowana:
+            return 17
+        case .humpbackWhale:
+            return 23
         }
     }
 
@@ -196,6 +256,8 @@ enum FishSpecies: String, CaseIterable, Hashable, Identifiable, Sendable, AppEnu
             return 1.18
         case .moonKoi:
             return 0.88
+        case .sunsetRasbora:
+            return 0.86
         case .glassGold:
             return 0.96
         case .neonGuppy:
@@ -206,6 +268,12 @@ enum FishSpecies: String, CaseIterable, Hashable, Identifiable, Sendable, AppEnu
             return 1.05
         case .leopardShark:
             return 1.36
+        case .velvetDiscus:
+            return 0.62
+        case .silverArowana:
+            return 0.74
+        case .humpbackWhale:
+            return 1.04
         }
     }
 
@@ -215,6 +283,8 @@ enum FishSpecies: String, CaseIterable, Hashable, Identifiable, Sendable, AppEnu
             return 1.0
         case .moonKoi:
             return 0.86
+        case .sunsetRasbora:
+            return 0.68
         case .glassGold:
             return 0.92
         case .neonGuppy:
@@ -225,6 +295,12 @@ enum FishSpecies: String, CaseIterable, Hashable, Identifiable, Sendable, AppEnu
             return 1.34
         case .leopardShark:
             return 0.44
+        case .velvetDiscus:
+            return 0.82
+        case .silverArowana:
+            return 0.56
+        case .humpbackWhale:
+            return 0.46
         }
     }
 
@@ -232,19 +308,27 @@ enum FishSpecies: String, CaseIterable, Hashable, Identifiable, Sendable, AppEnu
         switch self {
         case .royalBetta, .moonKoi, .neonGuppy, .emberTetra:
             return false
-        case .glassGold, .opalAngelfish, .leopardShark:
+        case .sunsetRasbora, .glassGold, .opalAngelfish, .leopardShark, .velvetDiscus, .silverArowana, .humpbackWhale:
             return true
         }
     }
 
     var freeFallback: FishSpecies {
         switch self {
+        case .sunsetRasbora:
+            return .emberTetra
         case .glassGold:
             return .emberTetra
         case .opalAngelfish:
             return .royalBetta
         case .leopardShark:
             return .emberTetra
+        case .velvetDiscus:
+            return .moonKoi
+        case .silverArowana:
+            return .moonKoi
+        case .humpbackWhale:
+            return .moonKoi
         default:
             return self
         }
@@ -258,11 +342,15 @@ enum FishSpecies: String, CaseIterable, Hashable, Identifiable, Sendable, AppEnu
         [
             .royalBetta: DisplayRepresentation(title: "Royal Betta"),
             .moonKoi: DisplayRepresentation(title: "Moon Koi"),
+            .sunsetRasbora: DisplayRepresentation(title: "Sunset Rasbora"),
             .glassGold: DisplayRepresentation(title: "Glass Goldfish"),
             .neonGuppy: DisplayRepresentation(title: "Neon Guppy"),
             .emberTetra: DisplayRepresentation(title: "Ember Tetra"),
             .opalAngelfish: DisplayRepresentation(title: "Opal Angelfish"),
             .leopardShark: DisplayRepresentation(title: "Leopard Shark"),
+            .velvetDiscus: DisplayRepresentation(title: "Velvet Discus"),
+            .silverArowana: DisplayRepresentation(title: "Silver Arowana"),
+            .humpbackWhale: DisplayRepresentation(title: "Humpback Whale"),
         ]
     }
 }

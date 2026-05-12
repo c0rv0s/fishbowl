@@ -318,9 +318,11 @@
 				DEVELOPMENT_TEAM = PLNFCVNGS6;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Fishbowl/App/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Glass Aquarium";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.nate.fishbowlWidget;
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -341,8 +343,9 @@
 				DEVELOPMENT_TEAM = PLNFCVNGS6;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = FishbowlWidgetExtension/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Glass Aquarium";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.nate.fishbowlWidget.widget;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -418,8 +421,9 @@
 				DEVELOPMENT_TEAM = PLNFCVNGS6;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = FishbowlWidgetExtension/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Glass Aquarium";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.nate.fishbowlWidget.widget;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -505,9 +509,11 @@
 				DEVELOPMENT_TEAM = PLNFCVNGS6;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Fishbowl/App/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Glass Aquarium";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.nate.fishbowlWidget;
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
