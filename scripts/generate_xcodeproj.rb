@@ -28,8 +28,14 @@ app_sources = %w[
   ContentView.swift
 ].map { |path| app_group.new_file(path) }
 
+immersive_group = app_group.new_group('Immersive', 'Immersive')
+app_sources += Dir.glob((ROOT + 'Fishbowl/App/Immersive/*.swift').to_s).sort.map do |path|
+  immersive_group.new_file(File.basename(path))
+end
+
 shared_sources = %w[
   AquariumConfiguration.swift
+  AquariumGlassSnapshots.swift
   BowlProfileStore.swift
   PrivacyInfo.xcprivacy
   LiquidGlassBackground.swift
@@ -58,7 +64,7 @@ app_target.build_configurations.each do |config|
     settings['INFOPLIST_FILE'] = 'Fishbowl/App/Info.plist'
     settings['TARGETED_DEVICE_FAMILY'] = '1,2'
     settings['SWIFT_VERSION'] = '6.0'
-    settings['MARKETING_VERSION'] = '1.0'
+    settings['MARKETING_VERSION'] = '2.0.0'
     settings['CURRENT_PROJECT_VERSION'] = '1'
     settings['GENERATE_INFOPLIST_FILE'] = 'NO'
     settings['CODE_SIGN_STYLE'] = 'Automatic'
@@ -72,7 +78,7 @@ widget_target.build_configurations.each do |config|
     settings['INFOPLIST_FILE'] = 'FishbowlWidgetExtension/Info.plist'
     settings['TARGETED_DEVICE_FAMILY'] = '1,2'
     settings['SWIFT_VERSION'] = '6.0'
-    settings['MARKETING_VERSION'] = '1.0'
+    settings['MARKETING_VERSION'] = '2.0.0'
     settings['CURRENT_PROJECT_VERSION'] = '1'
     settings['GENERATE_INFOPLIST_FILE'] = 'NO'
     settings['CODE_SIGN_STYLE'] = 'Automatic'

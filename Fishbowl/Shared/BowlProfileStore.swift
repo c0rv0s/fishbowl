@@ -22,9 +22,9 @@ enum AquariumMode: String, CaseIterable, Codable, Hashable, Identifiable, Sendab
     var summary: String {
         switch self {
         case .decorative:
-            return "Just let it sit there and look good."
+            return "Always at ease. No feeding needed."
         case .pet:
-            return "Your fish gets hungry and needs feeding."
+            return "Care for your fish and keep them fed."
         }
     }
 }
@@ -661,6 +661,21 @@ final class BowlStudio: ObservableObject {
     func updateSelectedConfiguration(_ mutation: (inout AquariumConfiguration) -> Void) {
         updateSelectedProfile { profile in
             mutation(&profile.configuration)
+        }
+    }
+
+    @discardableResult
+    func saveProfile(_ profile: BowlProfile) -> BowlProfile? {
+        if let index = profiles.firstIndex(where: { $0.id == profile.id }) {
+            var updated = profile
+            updated.touch()
+            profiles[index] = updated
+            persist()
+            return updated
+        } else {
+            guard canCreateProfile else { return nil }
+            addProfile(profile)
+            return selectedProfile
         }
     }
 

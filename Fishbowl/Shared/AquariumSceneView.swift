@@ -402,8 +402,8 @@ private struct AquariumInteriorView: View {
 
                     FoodPelletField(pellets: foodPellets)
 
-                    if configuration.featurePiece == .kelp {
-                        featurePieceView(in: size)
+                    ForEach(Array(configuration.resolvedFeaturePieces.enumerated()), id: \.offset) { index, style in
+                        if style == .kelp { featurePieceView(style, in: size, slot: index) }
                     }
 
                     SubstrateLayer(
@@ -411,8 +411,8 @@ private struct AquariumInteriorView: View {
                         phase: phase
                     )
 
-                    if configuration.featurePiece != .none, configuration.featurePiece != .kelp {
-                        featurePieceView(in: size)
+                    ForEach(Array(configuration.resolvedFeaturePieces.enumerated()), id: \.offset) { index, style in
+                        if style != .kelp { featurePieceView(style, in: size, slot: index) }
                     }
 
                     DecorationLayer(decoration: configuration.decoration)
@@ -821,7 +821,7 @@ private struct AquariumInteriorView: View {
                 0.7,
                 true
             )
-        case .shrimp:
+        case .shrimp, .miniSubmarine:
             metrics = (
                 configuration.vesselStyle == .panorama ? 0.68 : 0.61,
                 0.80,
@@ -841,7 +841,7 @@ private struct AquariumInteriorView: View {
                 2.7,
                 false
             )
-        case .seaCucumber:
+        case .seaCucumber, .seaUrchin:
             metrics = (
                 configuration.vesselStyle == .panorama ? 0.34 : 0.38,
                 0.82,
@@ -874,7 +874,7 @@ private struct AquariumInteriorView: View {
         let rotationStrength: CGFloat
 
         switch style {
-        case .shrimp:
+        case .shrimp, .miniSubmarine:
             rotationStrength = 4.8
         case .crab:
             rotationStrength = 2.6
@@ -921,10 +921,12 @@ private struct AquariumInteriorView: View {
             return .zero
         case .snail:
             return CGSize(width: size.width * 0.13, height: size.width * 0.10)
-        case .shrimp:
+        case .shrimp, .miniSubmarine:
             return CGSize(width: size.width * 0.15, height: size.width * 0.10)
         case .crab:
             return CGSize(width: size.width * 0.16, height: size.width * 0.11)
+        case .seaUrchin:
+            return CGSize(width: size.width * 0.17, height: size.width * 0.15)
         case .seaCucumber:
             return CGSize(width: size.width * 0.22, height: size.width * 0.10)
         case .nudibranchFlame:
@@ -935,25 +937,33 @@ private struct AquariumInteriorView: View {
     }
 
     @ViewBuilder
-    private func featurePieceView(in size: CGSize) -> some View {
-        let colors = configuration.featurePiece.accentColors
+    private func featurePieceView(_ style: FeaturePieceStyle, in size: CGSize, slot: Int) -> some View {
+        let colors = style.accentColors
         let highlight = configuration.decoration.accentColors.first ?? configuration.substrate.accentColors.first ?? .white
 
-        switch configuration.featurePiece {
+        switch style {
         case .none:
             EmptyView()
         case .bubbleStone:
             BubbleStoneFeature(primary: colors[0], highlight: colors[2])
                 .frame(width: size.width * 0.18, height: size.width * 0.20)
-                .position(featurePiecePosition(in: size))
+                .position(featurePiecePosition(style, in: size, slot: slot))
         case .driftwoodArch:
             DriftwoodArchFeature(primary: colors[0], secondary: colors[1], highlight: colors[2])
                 .frame(width: size.width * 0.30, height: size.width * 0.19)
-                .position(featurePiecePosition(in: size))
+                .position(featurePiecePosition(style, in: size, slot: slot))
         case .moonLantern:
             MoonLanternFeature(glow: colors[1], stand: highlight)
                 .frame(width: size.width * 0.18, height: size.width * 0.24)
-                .position(featurePiecePosition(in: size))
+                .position(featurePiecePosition(style, in: size, slot: slot))
+        case .seaFan:
+            SeaFanFeature()
+                .frame(width: size.width * 0.27, height: size.width * 0.32)
+                .position(featurePiecePosition(style, in: size, slot: slot))
+        case .pearlShell:
+            PearlShellFeature()
+                .frame(width: size.width * 0.25, height: size.width * 0.22)
+                .position(featurePiecePosition(style, in: size, slot: slot))
         case .kelp:
             KelpFeature(
                 primary: colors[0],
@@ -965,12 +975,16 @@ private struct AquariumInteriorView: View {
                     width: size.width * (configuration.vesselStyle == .panorama ? 0.24 : 0.22),
                     height: size.height * (configuration.vesselStyle == .panorama ? 0.64 : 0.61)
                 )
-                .position(featurePiecePosition(in: size))
+                .position(featurePiecePosition(style, in: size, slot: slot))
         }
     }
 
-    private func featurePiecePosition(in size: CGSize) -> CGPoint {
-        switch configuration.featurePiece {
+    private func featurePiecePosition(_ style: FeaturePieceStyle, in size: CGSize, slot: Int) -> CGPoint {
+        if configuration.resolvedFeaturePieces.count == 2 {
+            let y: CGFloat = style == .kelp ? 0.61 : (style == .seaFan ? 0.70 : 0.79)
+            return CGPoint(x: size.width * (slot == 0 ? 0.28 : 0.72), y: size.height * y)
+        }
+        switch style {
         case .none:
             return CGPoint(x: size.width * 0.50, y: size.height * 0.80)
         case .bubbleStone:
@@ -988,6 +1002,10 @@ private struct AquariumInteriorView: View {
                 x: size.width * (configuration.vesselStyle == .panorama ? 0.66 : 0.70),
                 y: size.height * 0.78
             )
+        case .seaFan:
+            return CGPoint(x: size.width * 0.70, y: size.height * 0.70)
+        case .pearlShell:
+            return CGPoint(x: size.width * 0.70, y: size.height * 0.79)
         case .kelp:
             return CGPoint(
                 x: size.width * (configuration.vesselStyle == .panorama ? 0.29 : 0.32),
@@ -1868,10 +1886,14 @@ private struct CompanionSprite: View {
                 EmptyView()
             case .snail:
                 SnailSprite(accent: accent)
+            case .miniSubmarine:
+                MiniSubmarineFeature()
             case .shrimp:
                 ShrimpSprite(shell: accent, highlight: secondary)
             case .crab:
                 CrabSprite(shell: accent, highlight: secondary)
+            case .seaUrchin:
+                SeaUrchinSprite()
             case .seaCucumber:
                 SeaCucumberSprite(bodyColor: accent, underside: secondary, highlight: substrateHighlight)
             case .nudibranchFlame:
@@ -5735,7 +5757,7 @@ private struct AquariumMetalMotionResolver {
                 0.7,
                 true
             )
-        case .shrimp:
+        case .shrimp, .miniSubmarine:
             metrics = (
                 configuration.vesselStyle == .panorama ? 0.68 : 0.61,
                 0.80,
@@ -5755,7 +5777,7 @@ private struct AquariumMetalMotionResolver {
                 2.7,
                 false
             )
-        case .seaCucumber:
+        case .seaCucumber, .seaUrchin:
             metrics = (
                 configuration.vesselStyle == .panorama ? 0.34 : 0.38,
                 0.82,
@@ -5788,7 +5810,7 @@ private struct AquariumMetalMotionResolver {
         let rotationStrength: CGFloat
 
         switch style {
-        case .shrimp:
+        case .shrimp, .miniSubmarine:
             rotationStrength = 4.8
         case .crab:
             rotationStrength = 2.6
@@ -5835,10 +5857,12 @@ private struct AquariumMetalMotionResolver {
             return .zero
         case .snail:
             return CGSize(width: size.width * 0.13, height: size.width * 0.10)
-        case .shrimp:
+        case .shrimp, .miniSubmarine:
             return CGSize(width: size.width * 0.15, height: size.width * 0.10)
         case .crab:
             return CGSize(width: size.width * 0.16, height: size.width * 0.11)
+        case .seaUrchin:
+            return CGSize(width: size.width * 0.17, height: size.width * 0.15)
         case .seaCucumber:
             return CGSize(width: size.width * 0.22, height: size.width * 0.10)
         case .nudibranchFlame:
@@ -6075,10 +6099,12 @@ private struct AquariumMetalMotionResolver {
             return .zero
         case .snail:
             return CGSize(width: 40, height: 30)
-        case .shrimp:
+        case .shrimp, .miniSubmarine:
             return CGSize(width: 48, height: 28)
         case .crab:
             return CGSize(width: 54, height: 34)
+        case .seaUrchin:
+            return CGSize(width: 48, height: 44)
         case .seaCucumber:
             return CGSize(width: 62, height: 28)
         case .nudibranchFlame:
@@ -6242,8 +6268,8 @@ private struct AquariumMetalStaticInteriorView: View {
                     .opacity(sceneTone == .night ? 0.22 : 0.34)
 
                 ZStack {
-                    if configuration.featurePiece == .kelp {
-                        featurePieceView(in: size)
+                    ForEach(Array(configuration.resolvedFeaturePieces.enumerated()), id: \.offset) { index, style in
+                        if style == .kelp { featurePieceView(style, in: size, slot: index) }
                     }
 
                     SubstrateLayer(
@@ -6251,8 +6277,8 @@ private struct AquariumMetalStaticInteriorView: View {
                         phase: phase
                     )
 
-                    if configuration.featurePiece != .none, configuration.featurePiece != .kelp {
-                        featurePieceView(in: size)
+                    ForEach(Array(configuration.resolvedFeaturePieces.enumerated()), id: \.offset) { index, style in
+                        if style != .kelp { featurePieceView(style, in: size, slot: index) }
                     }
 
                     if showsDecoration {
@@ -6281,25 +6307,33 @@ private struct AquariumMetalStaticInteriorView: View {
     }
 
     @ViewBuilder
-    private func featurePieceView(in size: CGSize) -> some View {
-        let colors = configuration.featurePiece.accentColors
+    private func featurePieceView(_ style: FeaturePieceStyle, in size: CGSize, slot: Int) -> some View {
+        let colors = style.accentColors
         let highlight = configuration.decoration.accentColors.first ?? configuration.substrate.accentColors.first ?? .white
 
-        switch configuration.featurePiece {
+        switch style {
         case .none:
             EmptyView()
         case .bubbleStone:
             BubbleStoneFeature(primary: colors[0], highlight: colors[2])
                 .frame(width: size.width * 0.18, height: size.width * 0.20)
-                .position(featurePiecePosition(in: size))
+                .position(featurePiecePosition(style, in: size, slot: slot))
         case .driftwoodArch:
             DriftwoodArchFeature(primary: colors[0], secondary: colors[1], highlight: colors[2])
                 .frame(width: size.width * 0.30, height: size.width * 0.19)
-                .position(featurePiecePosition(in: size))
+                .position(featurePiecePosition(style, in: size, slot: slot))
         case .moonLantern:
             MoonLanternFeature(glow: colors[1], stand: highlight)
                 .frame(width: size.width * 0.18, height: size.width * 0.24)
-                .position(featurePiecePosition(in: size))
+                .position(featurePiecePosition(style, in: size, slot: slot))
+        case .seaFan:
+            SeaFanFeature()
+                .frame(width: size.width * 0.27, height: size.width * 0.32)
+                .position(featurePiecePosition(style, in: size, slot: slot))
+        case .pearlShell:
+            PearlShellFeature()
+                .frame(width: size.width * 0.25, height: size.width * 0.22)
+                .position(featurePiecePosition(style, in: size, slot: slot))
         case .kelp:
             KelpFeature(
                 primary: colors[0],
@@ -6311,12 +6345,16 @@ private struct AquariumMetalStaticInteriorView: View {
                 width: size.width * (configuration.vesselStyle == .panorama ? 0.24 : 0.22),
                 height: size.height * (configuration.vesselStyle == .panorama ? 0.64 : 0.61)
             )
-            .position(featurePiecePosition(in: size))
+            .position(featurePiecePosition(style, in: size, slot: slot))
         }
     }
 
-    private func featurePiecePosition(in size: CGSize) -> CGPoint {
-        switch configuration.featurePiece {
+    private func featurePiecePosition(_ style: FeaturePieceStyle, in size: CGSize, slot: Int) -> CGPoint {
+        if configuration.resolvedFeaturePieces.count == 2 {
+            let y: CGFloat = style == .kelp ? 0.61 : (style == .seaFan ? 0.70 : 0.79)
+            return CGPoint(x: size.width * (slot == 0 ? 0.28 : 0.72), y: size.height * y)
+        }
+        switch style {
         case .none:
             return CGPoint(x: size.width * 0.50, y: size.height * 0.80)
         case .bubbleStone:
@@ -6334,6 +6372,10 @@ private struct AquariumMetalStaticInteriorView: View {
                 x: size.width * (configuration.vesselStyle == .panorama ? 0.66 : 0.70),
                 y: size.height * 0.78
             )
+        case .seaFan:
+            return CGPoint(x: size.width * 0.70, y: size.height * 0.70)
+        case .pearlShell:
+            return CGPoint(x: size.width * 0.70, y: size.height * 0.79)
         case .kelp:
             return CGPoint(
                 x: size.width * (configuration.vesselStyle == .panorama ? 0.29 : 0.32),
@@ -6416,3 +6458,122 @@ private struct AquariumMetalRippleSpriteView: View {
     }
 }
 #endif
+
+
+private struct MiniSubmarineFeature: View {
+    var body: some View {
+        GeometryReader { proxy in
+            let w = proxy.size.width, h = proxy.size.height
+            ZStack {
+                RoundedRectangle(cornerRadius: w * 0.04)
+                    .fill(Color.brown.gradient)
+                    .frame(width: w * 0.64, height: h * 0.065)
+                    .position(x: w * 0.51, y: h * 0.91)
+                Capsule()
+                    .fill(LinearGradient(colors: [.yellow.opacity(0.8), .orange, .brown], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .overlay(Capsule().stroke(.white.opacity(0.6), lineWidth: 1))
+                    .frame(width: w * 0.90, height: h * 0.56)
+                    .position(x: w * 0.52, y: h * 0.60)
+                ForEach(0..<3) { index in
+                    Circle()
+                        .fill(LinearGradient(colors: [.white, .cyan.opacity(0.8), .teal], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .overlay(Circle().stroke(Color.orange.opacity(0.9), lineWidth: w * 0.025))
+                        .frame(width: w * 0.14)
+                        .position(x: w * (0.29 + CGFloat(index) * 0.22), y: h * 0.58)
+                }
+                Path { path in
+                    path.move(to: CGPoint(x: w * 0.47, y: h * 0.36))
+                    path.addLine(to: CGPoint(x: w * 0.47, y: h * 0.12))
+                    path.addQuadCurve(to: CGPoint(x: w * 0.61, y: h * 0.075), control: CGPoint(x: w * 0.47, y: h * 0.055))
+                }
+                .stroke(Color.orange, style: StrokeStyle(lineWidth: w * 0.055, lineCap: .round))
+            }
+        }
+    }
+}
+
+private struct PearlShellFeature: View {
+    var body: some View {
+        GeometryReader { proxy in
+            let w = proxy.size.width, h = proxy.size.height
+            ZStack {
+                Path { path in
+                    path.move(to: CGPoint(x: w * 0.5, y: h * 0.90))
+                    path.addCurve(to: CGPoint(x: w * 0.06, y: h * 0.30), control1: CGPoint(x: w * 0.20, y: h * 0.72), control2: CGPoint(x: 0, y: h * 0.56))
+                    path.addQuadCurve(to: CGPoint(x: w * 0.94, y: h * 0.30), control: CGPoint(x: w * 0.5, y: -h * 0.20))
+                    path.addCurve(to: CGPoint(x: w * 0.5, y: h * 0.90), control1: CGPoint(x: w, y: h * 0.56), control2: CGPoint(x: w * 0.80, y: h * 0.72))
+                }
+                .fill(LinearGradient(colors: [.white, .pink.opacity(0.5), .orange.opacity(0.55)], startPoint: .top, endPoint: .bottom))
+                ForEach(0..<7) { index in
+                    Path { path in
+                        path.move(to: CGPoint(x: w * 0.5, y: h * 0.85))
+                        path.addLine(to: CGPoint(x: w * (0.16 + CGFloat(index) * 0.113), y: h * (0.22 - sin(CGFloat(index) / 6 * .pi) * 0.14)))
+                    }
+                    .stroke(.white.opacity(0.45), lineWidth: 1)
+                }
+                Ellipse().fill(Color.orange.opacity(0.45).gradient)
+                    .frame(width: w * 0.88, height: h * 0.22)
+                    .position(x: w * 0.5, y: h * 0.85)
+                Circle().fill(RadialGradient(colors: [.white, Color(red: 0.91, green: 0.89, blue: 0.84), .gray.opacity(0.6)], center: .topLeading, startRadius: 0, endRadius: w * 0.27))
+                    .frame(width: w * 0.28)
+                    .position(x: w * 0.50, y: h * 0.69)
+            }
+        }
+    }
+}
+
+
+private struct SeaUrchinSprite: View {
+    var body: some View {
+        GeometryReader { proxy in
+            let w = proxy.size.width, h = proxy.size.height
+            ZStack {
+                ForEach(0..<28) { i in
+                    let angle = Double(i) / 28 * .pi * 2
+                    Path { path in
+                        path.move(to: CGPoint(x: w * (0.5 + cos(angle) * 0.24), y: h * (0.54 + sin(angle) * 0.24)))
+                        path.addLine(to: CGPoint(x: w * (0.5 + cos(angle) * 0.43), y: h * (0.54 + sin(angle) * 0.42)))
+                    }
+                    .stroke(LinearGradient(colors: [.purple, Color(red: 0.82, green: 0.68, blue: 0.94)], startPoint: .bottom, endPoint: .top), style: StrokeStyle(lineWidth: w * 0.038, lineCap: .round))
+                }
+                Ellipse()
+                    .fill(RadialGradient(colors: [Color(red: 0.76, green: 0.56, blue: 0.92), Color(red: 0.32, green: 0.12, blue: 0.49)], center: .topLeading, startRadius: 0, endRadius: w * 0.52))
+                    .overlay(Ellipse().stroke(.white.opacity(0.45), lineWidth: 1))
+                    .frame(width: w * 0.62, height: h * 0.58)
+                    .position(x: w * 0.5, y: h * 0.54)
+                Ellipse().fill(.white.opacity(0.65))
+                    .frame(width: w * 0.13, height: h * 0.07)
+                    .rotationEffect(.degrees(-30))
+                    .position(x: w * 0.37, y: h * 0.36)
+            }
+        }
+    }
+}
+
+private struct SeaFanFeature: View {
+    var body: some View {
+        GeometryReader { proxy in
+            let w = proxy.size.width, h = proxy.size.height
+            ZStack {
+                Capsule().fill(Color.teal.gradient)
+                    .frame(width: w * 0.065, height: h * 0.35)
+                    .position(x: w * 0.5, y: h * 0.78)
+                Path { path in
+                    path.move(to: CGPoint(x: w * 0.5, y: h * 0.76))
+                    path.addCurve(to: CGPoint(x: w * 0.04, y: h * 0.32), control1: CGPoint(x: w * 0.2, y: h * 0.69), control2: CGPoint(x: -w * 0.03, y: h * 0.57))
+                    path.addQuadCurve(to: CGPoint(x: w * 0.29, y: h * 0.19), control: CGPoint(x: w * 0.02, y: h * 0.09))
+                    path.addQuadCurve(to: CGPoint(x: w * 0.71, y: h * 0.19), control: CGPoint(x: w * 0.50, y: -h * 0.17))
+                    path.addQuadCurve(to: CGPoint(x: w * 0.96, y: h * 0.32), control: CGPoint(x: w * 0.98, y: h * 0.09))
+                    path.addCurve(to: CGPoint(x: w * 0.5, y: h * 0.76), control1: CGPoint(x: w * 1.03, y: h * 0.57), control2: CGPoint(x: w * 0.8, y: h * 0.69))
+                }
+                .fill(LinearGradient(colors: [Color(red: 0.71, green: 0.59, blue: 0.84), Color(red: 0.52, green: 0.84, blue: 0.72), .teal], startPoint: .top, endPoint: .bottom))
+                ForEach(0..<9) { i in
+                    Path { path in
+                        path.move(to: CGPoint(x: w * 0.5, y: h * 0.76))
+                        path.addLine(to: CGPoint(x: w * (0.12 + CGFloat(i) * 0.095), y: h * (0.33 - sin(CGFloat(i) / 8 * .pi) * 0.20)))
+                    }.stroke(.white.opacity(0.3), lineWidth: 1)
+                }
+            }
+        }
+    }
+}

@@ -3,359 +3,234 @@ import StoreKit
 import SwiftUI
 import UIKit
 
-private enum TankPageID: Hashable {
-    case profile(UUID)
-    case addSlot(Int)
-    case premiumUpsell
-}
-
 struct ContentView: View {
-    @StateObject private var studio = BowlStudio()
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var studio: BowlStudio
+    var onOpenProfile: ((BowlProfile) -> Void)?
+    var startsWithHumming = false
     @StateObject private var premiumStore = PremiumStore()
     @State private var composerDraft: BowlProfile?
     @State private var deletingProfile: BowlProfile?
-    @State private var feedBurstsByProfileID: [UUID: [AquariumFeedBurst]] = [:]
-    @State private var currentPageID: TankPageID?
     @State private var isPremiumSheetPresented = false
-    @State private var isScrollTransitioning = false
+    @State private var showsHumming = false
+    @State private var openComposerAfterHum = false
+    @State private var didPresentInitialRoute = false
+
+    private var libraryProfiles: [BowlProfile] {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-AquariumLibraryStress") {
+            return AquariumPerformanceDiagnostics.libraryFixtures
+        }
+        #endif
+        return studio.profiles
+    }
+
+    init(studio: BowlStudio = BowlStudio(), startsWithHumming: Bool = false, onOpenProfile: ((BowlProfile) -> Void)? = nil) {
+        self.studio = studio
+        self.startsWithHumming = startsWithHumming
+        self.onOpenProfile = onOpenProfile
+    }
 
     var body: some View {
         NavigationStack {
-            GeometryReader { geometry in
-                let pageHeight = geometry.size.height + geometry.safeAreaInsets.top + geometry.safeAreaInsets.bottom
-
-                ScrollView(.vertical, showsIndicators: false) {
-                    VStack(spacing: 0) {
-                        ForEach(studio.profiles) { profile in
-                            TankHomePage(
-                                profile: profile,
-                                isFocused: currentPageID == .profile(profile.id),
-                                isLivePrepared: shouldPrepareLiveScene(for: profile.id),
-                                isScrollFrozen: isScrollTransitioning,
-                                safeAreaInsets: geometry.safeAreaInsets,
-                                feedBursts: feedBurstsByProfileID[profile.id] ?? [],
-                                onFeed: { xFraction in
-                                    dropFood(in: profile.id, at: xFraction)
-                                },
-                                onFeedConsumed: { burstID in
-                                    finishFeeding(in: profile.id, burstID: burstID)
-                                },
-                                onDelete: {
-                                    deletingProfile = profile
-                                }
-                            )
-                            .frame(width: geometry.size.width, height: pageHeight)
-                            .id(TankPageID.profile(profile.id))
+            ZStack {
+                LiquidGlassBackdrop()
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 28) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("My bowls").font(.system(.largeTitle, design: .serif).weight(.regular))
+                            Text("Little worlds, made yours.").font(.subheadline).foregroundStyle(.secondary)
                         }
-
-                        if studio.canCreateProfile {
-                            AddTankPage(
-                                slotNumber: studio.profiles.count + 1,
-                                tankLimit: premiumStore.tankLimit,
-                                safeAreaInsets: geometry.safeAreaInsets,
-                                premiumStore: premiumStore
-                            ) {
-                                composerDraft = studio.makeDraftProfile()
-                            } onGenerated: { profile in
-                                studio.addProfile(profile)
-                                currentPageID = .profile(profile.id)
+                        Button {
+                            if studio.canCreateProfile { showsHumming = true }
+                            else { isPremiumSheetPresented = true }
+                        } label: {
+                            HStack(spacing: 17) {
+                                Image(systemName: "waveform").font(.system(size: 24, weight: .light))
+                                    .frame(width: 54, height: 54)
+                                    .glassEffect(.regular.tint(GlassPalette.mist.opacity(0.25)), in: .circle)
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Text("Hum a new bowl").font(.system(.title3, design: .serif))
+                                    Text("A little sound becomes a little world.").font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer(minLength: 0)
+                                Image(systemName: "arrow.up.right").font(.subheadline)
                             }
-                            .frame(width: geometry.size.width, height: pageHeight)
-                            .id(TankPageID.addSlot(studio.profiles.count + 1))
-                        } else if !premiumStore.isPremiumUnlocked {
-                            PremiumUpsellPage(
-                                currentTankCount: studio.profiles.count,
-                                safeAreaInsets: geometry.safeAreaInsets,
-                                onUnlock: {
-                                    isPremiumSheetPresented = true
-                                }
-                            )
-                            .frame(width: geometry.size.width, height: pageHeight)
-                            .id(TankPageID.premiumUpsell)
+                            .padding(18)
+                            .background(.white.opacity(0.20), in: .rect(cornerRadius: 28))
                         }
+                        .buttonStyle(GlassPressStyle())
+                        .accessibilityIdentifier("library.hum")
+
+                        ForEach(libraryProfiles) { profile in
+                            TankHomePage(profile: profile, isActive: !showsHumming && composerDraft == nil && !isPremiumSheetPresented, onDelete: { deletingProfile = profile }, onOpen: {
+                                studio.selectProfile(profile.id)
+                                onOpenProfile?(profile)
+                            }, onGlassMeal: { studio.feedProfile(id: profile.id) })
+                        }
+                        if libraryProfiles.isEmpty {
+                            Text("Your first aquarium is waiting. Hum a tune or choose the fish yourself.")
+                                .font(.body).foregroundStyle(.secondary).padding(.vertical, 30)
+                        }
+                        HStack {
+                            Text("\(libraryProfiles.count) of \(premiumStore.tankLimit) bowls")
+                                .font(.caption).foregroundStyle(.secondary)
+                            Spacer()
+                            if !premiumStore.isPremiumUnlocked {
+                                Button("Explore Premium") { isPremiumSheetPresented = true }.font(.subheadline)
+                            }
+                        }
+                        .padding(.vertical, 12)
                     }
-                    .scrollTargetLayout()
+                    .frame(maxWidth: 620)
+                    .padding(.horizontal, 24).padding(.top, 14).padding(.bottom, 30)
+                    .frame(maxWidth: .infinity)
                 }
-                .ignoresSafeArea()
-                .scrollTargetBehavior(.paging)
-                .scrollClipDisabled()
-                .scrollPosition(id: $currentPageID)
-                .onScrollPhaseChange { _, newPhase in
-                    isScrollTransitioning = newPhase != .idle
+                .scrollIndicators(.hidden)
+            }
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Back to aquarium", systemImage: "chevron.left") { dismiss() }
+                        .labelStyle(.iconOnly)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Create a bowl", systemImage: "plus") {
+                        if studio.canCreateProfile { composerDraft = studio.makeDraftProfile() }
+                        else { isPremiumSheetPresented = true }
+                    }.labelStyle(.iconOnly)
                 }
             }
-            .navigationBarHidden(true)
         }
+        .foregroundStyle(colorScheme.fishbowlPrimaryText)
+        .tint(GlassPalette.sea)
         .fullScreenCover(item: $composerDraft) { draft in
             TankComposerScreen(initialProfile: draft, premiumStore: premiumStore) { profile in
-                studio.addProfile(profile)
-                currentPageID = .profile(profile.id)
+                _ = studio.saveProfile(profile)
                 composerDraft = nil
-            } onCancel: {
-                composerDraft = nil
+            } onCancel: { composerDraft = nil }
+        }
+        .fullScreenCover(isPresented: $showsHumming, onDismiss: {
+            if openComposerAfterHum { openComposerAfterHum = false; composerDraft = studio.makeDraftProfile() }
+        }) {
+            GeometryReader { geometry in
+                AddTankPage(slotNumber: studio.profiles.count + 1, tankLimit: premiumStore.tankLimit,
+                            safeAreaInsets: geometry.safeAreaInsets, premiumStore: premiumStore,
+                            onCreate: { openComposerAfterHum = true; showsHumming = false }, onGenerated: { profile in
+                    _ = studio.saveProfile(profile)
+                    showsHumming = false
+                })
             }
         }
-        .sheet(isPresented: $isPremiumSheetPresented) {
-            PremiumUnlockSheet(store: premiumStore)
-        }
-        .confirmationDialog(
-            "Delete this tank?",
-            isPresented: Binding(
-                get: { deletingProfile != nil },
-                set: { isPresented in
-                    if !isPresented {
-                        deletingProfile = nil
-                    }
-                }
-            ),
-            titleVisibility: .visible,
-            presenting: deletingProfile
-        ) { profile in
+        .sheet(isPresented: $isPremiumSheetPresented) { PremiumUnlockSheet(store: premiumStore) }
+        .confirmationDialog("Delete this bowl?", isPresented: Binding(get: { deletingProfile != nil }, set: {
+            if !$0 { deletingProfile = nil }
+        }), titleVisibility: .visible, presenting: deletingProfile) { profile in
             Button("Delete \(profile.name)", role: .destructive) {
-                feedBurstsByProfileID[profile.id] = nil
-                studio.deleteProfile(id: profile.id)
-                deletingProfile = nil
+                studio.deleteProfile(id: profile.id); deletingProfile = nil
             }
-
-            Button("Cancel", role: .cancel) {
-                deletingProfile = nil
-            }
+            Button("Cancel", role: .cancel) { deletingProfile = nil }
         } message: { profile in
-            Text("Remove \(profile.name) and free up this slot for a new tank.")
+            Text("Remove \(profile.name) from your collection.")
         }
-        .onAppear(perform: syncCurrentPageID)
-        .onChange(of: pageIDs) { _, _ in
-            syncCurrentPageID()
+        .task { await premiumStore.prepare() }
+        #if DEBUG
+        .task {
+            if ProcessInfo.processInfo.arguments.contains("-AquariumLibraryStress") {
+                await AquariumPerformanceDiagnostics.scrollLibrary()
+            }
         }
-    }
-
-    private func dropFood(in profileID: UUID, at xFraction: CGFloat) {
-        guard let profile = currentProfile(id: profileID) else { return }
-        let snapshot = profile.petSnapshot(at: .now)
-        guard profile.mode == .pet, snapshot.isAlive else { return }
-
-        let now = Date.now
-        let clampedX = min(
-            max(xFraction, AquariumFeedBurst.horizontalDropBounds.lowerBound),
-            AquariumFeedBurst.horizontalDropBounds.upperBound
-        )
-        let activeBursts = feedBurstsByProfileID[profileID, default: []]
-        guard activeBursts.count < AquariumFeedBurst.maxQueuedBursts else { return }
-
-        feedBurstsByProfileID[profileID] = activeBursts + [
-            AquariumFeedBurst(startedAt: now, xFraction: clampedX)
-        ]
-    }
-
-    private func finishFeeding(in profileID: UUID, burstID: UUID) {
-        guard let profile = currentProfile(id: profileID) else {
-            feedBurstsByProfileID[profileID] = nil
-            return
+        #endif
+        .onAppear {
+            guard !didPresentInitialRoute else { return }
+            didPresentInitialRoute = true
+            if startsWithHumming {
+                if studio.canCreateProfile { showsHumming = true }
+                else { isPremiumSheetPresented = true }
+            }
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-AquariumHumUI") { showsHumming = true }
+            if ProcessInfo.processInfo.arguments.contains("-AquariumPremiumUI") { isPremiumSheetPresented = true }
+            #endif
         }
-
-        let currentBursts = feedBurstsByProfileID[profileID, default: []]
-        guard currentBursts.contains(where: { $0.id == burstID }) else { return }
-
-        feedBurstsByProfileID[profileID] = currentBursts.filter { $0.id != burstID }
-        let willBurst = profile.willBurstOnNextFeed(at: .now)
-        withAnimation(.easeInOut(duration: willBurst ? 0.72 : 0.34)) {
-            studio.feedProfile(id: profileID, at: .now)
-        }
-
-        guard let updatedProfile = currentProfile(id: profileID) else {
-            feedBurstsByProfileID[profileID] = nil
-            return
-        }
-
-        if !updatedProfile.petSnapshot(at: .now).isAlive {
-            feedBurstsByProfileID[profileID] = nil
-        }
-    }
-
-    private var pageIDs: [TankPageID] {
-        let profilePages = studio.profiles.map { TankPageID.profile($0.id) }
-        if studio.canCreateProfile {
-            return profilePages + [.addSlot(studio.profiles.count + 1)]
-        }
-        if !premiumStore.isPremiumUnlocked {
-            return profilePages + [.premiumUpsell]
-        }
-        return profilePages
-    }
-
-    private func syncCurrentPageID() {
-        guard !pageIDs.isEmpty else {
-            currentPageID = nil
-            return
-        }
-
-        if let currentPageID, pageIDs.contains(currentPageID) {
-            return
-        }
-
-        currentPageID = pageIDs.first
-    }
-
-    private func shouldPrepareLiveScene(for profileID: UUID) -> Bool {
-        studio.profiles.contains { $0.id == profileID }
-    }
-
-    private func currentProfile(id: UUID) -> BowlProfile? {
-        studio.profiles.first { $0.id == id }
     }
 }
 
 private struct TankHomePage: View {
     @Environment(\.colorScheme) private var colorScheme
-
     let profile: BowlProfile
-    let isFocused: Bool
-    let isLivePrepared: Bool
-    let isScrollFrozen: Bool
-    let safeAreaInsets: EdgeInsets
-    let feedBursts: [AquariumFeedBurst]
-    let onFeed: (CGFloat) -> Void
-    let onFeedConsumed: AquariumFeedBurstConsumedHandler
+    var isActive = true
     let onDelete: () -> Void
+    let onOpen: () -> Void
+    let onGlassMeal: () -> Void
     @State private var shareImage: UIImage?
+    @State private var isPreparingShare = false
+    @State private var isVisible = false
 
-    private var snapshot: AquariumPetSnapshot {
-        profile.petSnapshot(at: .now)
-    }
+    private var snapshot: AquariumPetSnapshot { profile.petSnapshot(at: .now) }
 
     var body: some View {
-        GeometryReader { geometry in
-            let layoutScale = min(max(geometry.size.width / 390, 1.0), 1.12)
-            let horizontalPadding = 24 * layoutScale
-            let tankSize = max(0, geometry.size.width - horizontalPadding * 2)
-            let headerTop = max(22, safeAreaInsets.top + 10)
-            let cardBottom = max(24, safeAreaInsets.bottom + 8)
-
-            ZStack(alignment: .bottomLeading) {
-                AmbientScreenBackdrop(
-                    configuration: profile.configuration,
-                    renderStyle: .lightweight
-                )
-
-                AnimatedAquariumStage(
-                    profile: profile,
-                    configuration: profile.configuration,
-                    format: .widgetLarge,
-                    isFocused: isFocused,
-                    isPrepared: isLivePrepared,
-                    isScrollFrozen: isScrollFrozen,
-                    feedBursts: feedBursts,
-                    onFeed: onFeed,
-                    onFeedConsumed: onFeedConsumed
-                )
-                .frame(width: tankSize, height: tankSize)
-                .position(x: geometry.size.width * 0.5, y: geometry.size.height * 0.5)
-
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(alignment: .top) {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(profile.name)
-                                .font(.system(size: 44 * layoutScale, weight: .medium, design: .serif))
-                                .foregroundStyle(colorScheme.fishbowlPrimaryText)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.75)
-
-                            Text(subtitleText)
-                                .font(.system(size: 16 * layoutScale, weight: .medium, design: .rounded))
-                                .foregroundStyle(colorScheme.fishbowlSecondaryText)
-                                .lineLimit(2)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                        Spacer(minLength: 14)
-
-                        HStack(spacing: 10) {
-                            IconGlassButton(systemImage: "square.and.arrow.up") {
-                                shareImage = renderShareImage()
-                            }
-
-                            IconGlassButton(systemImage: "trash") {
-                                onDelete()
-                            }
+        VStack(alignment: .leading, spacing: 17) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(profile.name).font(.system(.title, design: .serif)).lineLimit(2)
+                Spacer(minLength: 8)
+                Menu {
+                    Button("Share aquarium", systemImage: "square.and.arrow.up") {
+                        isPreparingShare = true
+                        Task {
+                            shareImage = await renderShareImage()
+                            isPreparingShare = false
                         }
                     }
-                    .frame(minHeight: 92 * layoutScale, alignment: .top)
-
-                    Spacer(minLength: 0)
+                    .disabled(isPreparingShare)
+                    Button("Delete bowl", systemImage: "trash", role: .destructive, action: onDelete)
+                } label: {
+                    Image(systemName: "ellipsis").frame(width: 44, height: 44)
                 }
-                .padding(.top, headerTop)
-                .padding(.horizontal, horizontalPadding)
-                .padding(.bottom, max(28, safeAreaInsets.bottom + 14))
-
-                TankDetailCard(profile: profile)
-                    .padding(.horizontal, horizontalPadding)
-                    .padding(.bottom, cardBottom)
+                .glassEffect(.regular.interactive(), in: .circle)
+                .accessibilityLabel("Options for \(profile.name)")
+                .buttonStyle(.plain)
             }
-        }
-        .sheet(
-            isPresented: Binding(
-                get: { shareImage != nil },
-                set: { isPresented in
-                    if !isPresented {
-                        shareImage = nil
-                    }
+            ZStack {
+                if isVisible {
+                    AquariumCatalogPreview(configuration: profile.configuration, profile: profile,
+                                           animated: isActive, interactive: true, onMeal: onGlassMeal)
+                } else { AquariumPreviewPlaceholder(animated: false) }
+            }
+                .aspectRatio(0.94, contentMode: .fit)
+                .clipShape(.rect(cornerRadius: 30))
+                .onScrollVisibilityChange(threshold: 0.01) { isVisible = $0 }
+                .onDisappear { isVisible = false }
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(profile.configuration.descriptor).font(.subheadline.weight(.medium))
+                    Text(profile.mode == .decorative ? "Decorative · Always at ease" : snapshot.statusLine)
+                        .font(.caption).foregroundStyle(.secondary)
                 }
-            )
-        ) {
-            if let shareImage {
-                ActivityView(activityItems: [shareImage])
+                Spacer(minLength: 0)
+                Button("Open", systemImage: "arrow.up.right", action: onOpen)
+                    .buttonStyle(.glass).accessibilityLabel("Open \(profile.name)")
             }
+            Divider().opacity(0.4).padding(.top, 8)
+        }
+        .sheet(isPresented: Binding(get: { shareImage != nil }, set: { if !$0 { shareImage = nil } })) {
+            if let shareImage { ActivityView(activityItems: [shareImage]) }
         }
     }
 
-    private var subtitleText: String {
-        switch profile.mode {
-        case .decorative:
-            return "Decorative • Made for your Home Screen"
-        case .pet:
-            return snapshot.isAlive
-            ? "\(snapshot.mood.title) • \(subtitlePrompt)"
-            : (snapshot.mood == .burst
-               ? "Exploded • Delete this tank to make a new one"
-               : "Gone • Delete this tank to make a new one")
-        }
-    }
-
-    private var subtitlePrompt: String {
-        switch snapshot.mood {
-        case .decorative:
-            return "Made for your Home Screen"
-        case .content:
-            return "Tap the tank to drop food in"
-        case .stuffed:
-            return "They are digesting"
-        case .hungry:
-            return "Tap the tank to feed your fish"
-        case .critical:
-            return "Feed this tank now"
-        case .dead:
-            return "Delete this tank to make a new one"
-        case .burst:
-            return "You fed this one too much"
-        }
-    }
-
-    private func renderShareImage() -> UIImage? {
-        let shareSize: CGFloat = 430
-        let content = PhotoShareCard(profile: profile)
-            .environment(\.colorScheme, colorScheme)
-            .frame(width: shareSize, height: shareSize)
-
+    private func renderShareImage() async -> UIImage? {
+        await AquariumSnapshotRenderer.prepare(configuration: profile.configuration, format: .widgetLarge, snapshot: snapshot, daylight: colorScheme != .dark)
+        let content = PhotoShareCard(profile: profile).environment(\.colorScheme, colorScheme).frame(width: 430, height: 430)
         let renderer = ImageRenderer(content: content)
-        renderer.proposedSize = ProposedViewSize(width: shareSize, height: shareSize)
+        renderer.proposedSize = ProposedViewSize(width: 430, height: 430)
         renderer.scale = 3
         return renderer.uiImage
     }
-
 }
 
 private struct AddTankPage: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
 
     let slotNumber: Int
@@ -382,355 +257,184 @@ private struct AddTankPage: View {
     private let maxRecordingDuration: TimeInterval = 8
     private let analysisDurationNanoseconds: UInt64 = 5_000_000_000
     private let humCreationTicker = Timer.publish(every: 1 / 30, on: .main, in: .common).autoconnect()
-    private let tankCornerRadius: CGFloat = 34
-    private let tankHorizontalInset: CGFloat = 12
-    /// Vertical inset on both top and bottom so the glass panel clears the Dynamic Island and stays balanced.
-    private let tankVerticalInsetBeyondSafeTop: CGFloat = 5
-
     var body: some View {
         GeometryReader { geometry in
-            let tankVerticalInset = max(
-                tankHorizontalInset,
-                safeAreaInsets.top + tankVerticalInsetBeyondSafeTop
-            )
-            let tankSize = CGSize(
-                width: max(0, geometry.size.width - tankHorizontalInset * 2),
-                height: max(0, geometry.size.height - tankVerticalInset * 2)
-            )
-            let micDiameter = min(max(tankSize.width * 0.50, 184), 224)
-            let micCenterY = min(
-                max(tankSize.height * 0.54, safeAreaInsets.top + 220),
-                tankSize.height - safeAreaInsets.bottom - 188
-            )
-            let accentConfiguration = generatedDraft?.profile.configuration ?? .appIcon
-
             ZStack {
-                Color(red: 0.01, green: 0.12, blue: 0.22)
-                    .ignoresSafeArea()
-
-                ZStack {
-                    fullBleedBackdrop(
-                        configuration: accentConfiguration,
-                        size: tankSize
-                    )
-
-                    if stage == .preview, let generatedDraft {
-                        previewLayer(for: generatedDraft, in: tankSize)
-                            .transition(.opacity.combined(with: .scale(scale: 0.98)))
-                    } else {
-                        idleAndCaptureLayer(
-                            in: tankSize,
-                            micDiameter: micDiameter,
-                            micCenterY: micCenterY
-                        )
-                    }
-
-                    if stage != .preview {
-                        HumMicButton(
-                            stage: stage,
-                            fillProgress: micFillProgress,
-                            recordingProgress: recordingProgress,
-                            waveformLevels: recorder.waveformLevels
-                        )
-                        .frame(width: micDiameter, height: micDiameter)
-                        .position(x: tankSize.width * 0.5, y: micCenterY)
-                        .allowsHitTesting(false)
+                LiquidGlassBackdrop()
+                if stage == .preview, let generatedDraft {
+                    previewLayer(for: generatedDraft, in: geometry.size)
                         .transition(.opacity)
+                } else {
+                    ScrollView {
+                        captureLayer(in: geometry.size)
+                            .frame(minHeight: geometry.size.height)
                     }
-
-                    if stage == .analyzing {
-                        HumAnalysisView()
-                            .frame(width: min(micDiameter * 0.88, 170), height: min(micDiameter * 0.72, 110))
-                            .position(x: tankSize.width * 0.5, y: micCenterY)
-                            .allowsHitTesting(false)
-                            .transition(.opacity)
-                    }
-
-                    Color.clear
-                        .frame(width: micDiameter + 40, height: micDiameter + 40)
-                        .contentShape(Circle())
-                        .position(x: tankSize.width * 0.5, y: micCenterY)
-                        .highPriorityGesture(micHoldGesture)
-                        .allowsHitTesting(stage != .preview && stage != .analyzing)
-
-                    if stage != .idle {
-                        IconGlassButton(systemImage: "xmark") {
-                            resetCreationFlow(clearStatus: false)
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                        .padding(.top, stage == .preview ? 16 : max(18, safeAreaInsets.top + 6))
-                        .padding(.trailing, stage == .preview ? 14 : 22)
-                    }
+                    .scrollIndicators(.hidden)
                 }
-                .frame(width: tankSize.width, height: tankSize.height)
-                .clipShape(RoundedRectangle(cornerRadius: tankCornerRadius, style: .continuous))
-                .overlay {
-                    HumTankChrome(cornerRadius: tankCornerRadius)
+            }
+            .overlay(alignment: .topTrailing) {
+                IconGlassButton(systemImage: "xmark") {
+                    resetCreationFlow(clearStatus: true)
+                    dismiss()
                 }
-                .position(x: geometry.size.width * 0.5, y: geometry.size.height * 0.5)
+                .padding(.trailing, 24).padding(.top, 12)
+                .accessibilityLabel("Close humming")
+                .accessibilityIdentifier("hum.close")
             }
-            .ignoresSafeArea()
-            .sheet(isPresented: $isPremiumSheetPresented) {
-                PremiumUnlockSheet(store: premiumStore)
-            }
-            .onChange(of: premiumStore.isPremiumUnlocked) { _, unlocked in
-                guard unlocked, stage == .preview else { return }
-                HumHaptics.reveal()
-            }
-            .onReceive(humCreationTicker) { now in
-                handleTick(now)
-            }
+            .sheet(isPresented: $isPremiumSheetPresented) { PremiumUnlockSheet(store: premiumStore) }
+            .onReceive(humCreationTicker) { handleTick($0) }
             .onDisappear {
                 analyzeTask?.cancel()
+                isTouchActive = false
                 recorder.cancelCapture()
+                if stage == .recording || stage == .opening { resetCreationFlow(clearStatus: true) }
+            }
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.5), value: stage)
+            #if DEBUG
+            .onAppear {
+                let args = ProcessInfo.processInfo.arguments
+                guard let index = args.firstIndex(of: "-HumPreviewState"), args.indices.contains(index + 1) else { return }
+                // Visual fixtures never open the microphone or save a bowl.
+                switch args[index + 1] {
+                case "recording": stage = .recording; recordingProgress = 0.46; recorder.showVisualFixture(denied: false)
+                case "analyzing": stage = .analyzing
+                case "preview":
+                    let analysis = HumAudioAnalysis(averageLevel: 0.28, peakLevel: 0.43, variance: 0.007, pitch: 190, duration: 6)
+                    generatedDraft = HumGeneratedBowl(profile: HumBowlGenerator.makeProfile(from: analysis), analysis: analysis)
+                    stage = .preview
+                case "denied": recorder.showVisualFixture(denied: true); statusMessage = "Microphone access is off. Allow access in Settings to hum a bowl."
+                default: break
+                }
+            }
+            #endif
+        }
+        .foregroundStyle(colorScheme.fishbowlPrimaryText)
+        .tint(GlassPalette.sea)
+    }
+
+    private func captureLayer(in size: CGSize) -> some View {
+        let compact = size.height < 700
+        let diameter = min(size.width * 0.58, compact ? 205 : 238)
+        return VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 14) {
+                Text(stageTitle)
+                    .font(.system(size: compact ? 36 : 43, weight: .regular, design: .serif))
+                    .tracking(-1.1).fixedSize(horizontal: false, vertical: true)
+                    .foregroundStyle(colorScheme.fishbowlPrimaryText)
+                Text(stage == .idle ? "Let your voice shape an aquarium." :
+                     stage == .recording ? "Stay with your sound. Release when you're ready." :
+                     stage == .analyzing ? "Finding the colors and movement in your hum." : "Making room for your sound.")
+                    .font(.subheadline).foregroundStyle(colorScheme.fishbowlSecondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.top, compact ? 65 : 84)
+            .padding(.trailing, 18)
+
+            Spacer(minLength: 24)
+            ZStack {
+                HumMicButton(stage: stage, fillProgress: micFillProgress,
+                             recordingProgress: recordingProgress, waveformLevels: recorder.waveformLevels)
+                    .frame(width: diameter, height: diameter)
+                    .allowsHitTesting(false)
+                if stage == .analyzing {
+                    HumAnalysisView().frame(width: diameter * 0.56, height: 70).allowsHitTesting(false)
+                }
+                Color.clear.contentShape(Circle())
+                    .frame(width: diameter + 28, height: diameter + 28)
+                    .highPriorityGesture(micHoldGesture)
+                    .allowsHitTesting(stage != .analyzing)
+                    .accessibilityElement()
+                    .accessibilityLabel(stage == .recording ? "Finish humming" : "Start humming")
+                    .accessibilityHint("Hold to record your hum, then release. With VoiceOver, double tap to start or finish.")
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityAction {
+                        if stage == .recording { finishRecording() }
+                        else if stage == .idle { isTouchActive = true; beginRecordingSequence() }
+                    }
+                    .accessibilityIdentifier("hum.record")
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 20)
+
+            VStack(spacing: 13) {
+                if stage == .recording {
+                    HumWaveformView(levels: recorder.waveformLevels, maxHeight: 40, barWidth: 3)
+                        .frame(width: 210, height: 44)
+                    Text(recordingCounterLine).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                } else {
+                    Text(stage == .idle ? "Hold the glass & hum" : stage == .analyzing ? "Your bowl is taking shape" : "Opening the microphone")
+                        .font(.subheadline.weight(.medium))
+                    Text(stage == .idle ? "Up to 8 seconds. Any little melody will do." : "")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity).frame(minHeight: 80)
+            Spacer(minLength: 24)
+            if let statusMessage { statusChip(statusMessage).padding(.bottom, 16) }
+            if recorder.permissionDenied {
+                Button("Open microphone settings", action: openSettings)
+                    .buttonStyle(.glass).padding(.bottom, 14)
+            }
+            if stage == .idle {
+                Button("Choose the fish myself", systemImage: "slider.horizontal.3", action: onCreate)
+                    .font(.subheadline.weight(.medium))
+                    .frame(maxWidth: .infinity).padding(.vertical, 17)
+                    .glassEffect(.regular.interactive(), in: .capsule)
+                    .buttonStyle(GlassPressStyle())
+                Text("Your sound stays on this device.")
+                    .font(.caption2).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity).padding(.top, 16)
             }
         }
+        .frame(maxWidth: 480)
+        .padding(.horizontal, 30).padding(.bottom, 26)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var micFillProgress: CGFloat {
         switch stage {
-        case .idle:
-            return max(0.08, entryProgress)
-        case .opening, .recording, .analyzing:
-            return 1
-        case .preview:
-            return 0
+        case .idle: max(0.16, entryProgress)
+        case .opening, .recording, .analyzing: 0.76
+        case .preview: 0
         }
     }
 
-    @ViewBuilder
-    private func fullBleedBackdrop(
-        configuration: AquariumConfiguration,
-        size: CGSize
-    ) -> some View {
-        ZStack {
-            LinearGradient(
-                colors: [
-                    Color(red: 0.03, green: 0.20, blue: 0.38),
-                    Color(red: 0.04, green: 0.34, blue: 0.56),
-                    Color(red: 0.04, green: 0.46, blue: 0.69),
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-
-            HumCreationBackdrop(
-                colors: configuration.ambientBackdropColors,
-                isImmersive: stage != .idle
-            )
-        }
-        .frame(width: size.width, height: size.height)
-    }
-
-    @ViewBuilder
-    private func idleAndCaptureLayer(
-        in size: CGSize,
-        micDiameter: CGFloat,
-        micCenterY: CGFloat
-    ) -> some View {
-        VStack(spacing: 0) {
-            if stage != .idle {
-                VStack(spacing: 10) {
-                    Text(stageTitle)
-                        .font(.system(size: 28, weight: .semibold, design: .serif))
-                        .foregroundStyle(Color.white.opacity(0.92))
-
-                    if stage == .recording {
-                        Text(recordingCounterLine)
-                            .font(.system(size: 14, weight: .semibold, design: .rounded))
-                            .foregroundStyle(Color.white.opacity(0.72))
-                    }
-
-                    if let statusMessage {
-                        statusChip(statusMessage)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.top, max(20, safeAreaInsets.top + 2))
-                .padding(.horizontal, 24)
-                .transition(.opacity)
-            } else {
-                Spacer(minLength: max(24, safeAreaInsets.top + 8))
-            }
-
-            Spacer(minLength: 0)
-
-            if stage == .recording || stage == .opening {
-                VStack(spacing: 14) {
-                    HumWaveformView(
-                        levels: recorder.waveformLevels,
-                        maxHeight: 84,
-                        barWidth: 6
-                    )
-                    .frame(height: 88)
-                    .frame(maxWidth: min(size.width - 72, 340))
-                }
-                .padding(.bottom, max(76, size.height - micCenterY - micDiameter * 0.74))
-                .transition(.opacity)
-            } else {
-                Spacer(minLength: micDiameter + 92)
-            }
-
-            if stage == .idle {
-                VStack(spacing: 14) {
-                    if let statusMessage {
-                        statusChip(statusMessage)
-                    }
-
-                    ActionGlassButton(title: "New Tank", systemImage: "plus") {
-                        statusMessage = nil
-                        onCreate()
-                    }
-                    .allowsHitTesting(true)
-
-                    if recorder.permissionDenied {
-                        Button("Microphone Settings") {
-                            openSettings()
-                        }
-                        .font(.system(size: 14, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Color.white.opacity(0.76))
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.horizontal, 28)
-                .padding(.bottom, max(42, safeAreaInsets.bottom + 18))
-                .transition(.opacity)
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .animation(.easeInOut(duration: 0.32), value: stage)
-    }
-
-    @ViewBuilder
     private func previewLayer(for generatedDraft: HumGeneratedBowl, in size: CGSize) -> some View {
-        let isCompact = size.height < 760
-        let verticalSpacing: CGFloat = isCompact ? 14 : 22
-        let headerSpacing: CGFloat = isCompact ? 7 : 10
-        let topSpacer = max(isCompact ? 28 : 34, safeAreaInsets.top + (isCompact ? 8 : 18))
-        let heroHeight = min(size.height * (isCompact ? 0.38 : 0.46), isCompact ? 300 : 390)
-        let bottomSpacer = max(isCompact ? 12 : 22, safeAreaInsets.bottom + (isCompact ? 6 : 12))
-
-        VStack(spacing: verticalSpacing) {
-            Spacer(minLength: topSpacer)
-
-            VStack(alignment: .leading, spacing: headerSpacing) {
-                Text(generatedDraft.profile.name)
-                    .font(.system(size: isCompact ? 34 : 42, weight: .medium, design: .serif))
-                    .foregroundStyle(colorScheme.fishbowlPrimaryText)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.84)
-
-                Text(generatedDraft.analysis.headline)
-                    .font(.system(size: isCompact ? 15 : 17, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color.white.opacity(0.82))
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.9)
-
-                Text(generatedDraft.analysis.detailLine)
-                    .font(.system(size: isCompact ? 13 : 14, weight: .medium, design: .rounded))
-                    .foregroundStyle(Color.white.opacity(0.66))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, isCompact ? 22 : 28)
-
-            AquariumSceneView(
-                configuration: generatedDraft.profile.configuration,
-                format: .studioHero,
-                phase: Date.now.timeIntervalSinceReferenceDate / 5.4,
-                petSnapshot: generatedDraft.profile.petSnapshot(at: .now)
-            )
-            .frame(height: heroHeight)
-            .padding(.horizontal, isCompact ? 22 : 18)
-            .drawingGroup(opaque: false)
-
-            GlassPanel(cornerRadius: 34, showsGlassEffect: false) {
-                VStack(alignment: .leading, spacing: isCompact ? 10 : 14) {
-                    Text(generatedDraft.profile.configuration.descriptor)
-                        .font(.system(size: isCompact ? 21 : 24, weight: .semibold, design: .serif))
-                        .foregroundStyle(colorScheme.fishbowlPrimaryText)
-
-                    Text(generatedDraft.profile.configuration.detailLine)
-                        .font(.system(size: isCompact ? 13 : 14, weight: .medium, design: .rounded))
-                        .foregroundStyle(colorScheme.fishbowlSecondaryText)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    if premiumStore.isPremiumUnlocked {
-                        HStack(spacing: 10) {
-                            Image(systemName: "hand.tap.fill")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(Color.white.opacity(0.96))
-
-                            Text("Tap anywhere to keep it.")
-                                .font(.system(size: 15, weight: .semibold, design: .rounded))
-                                .foregroundStyle(Color.white.opacity(0.96))
-                        }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, isCompact ? 10 : 12)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .fill(Color.black.opacity(0.22))
-                        )
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .stroke(Color.white.opacity(0.14), lineWidth: 1)
-                        }
-                    } else {
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack(spacing: 10) {
-                                Image(systemName: "crown.fill")
-                                    .font(.system(size: isCompact ? 15 : 16, weight: .semibold))
-                                    .foregroundStyle(Color(red: 0.86, green: 0.72, blue: 0.24))
-
-                                Text("Unlock Premium To Keep This Bowl")
-                                    .font(.system(size: isCompact ? 14 : 15, weight: .semibold, design: .rounded))
-                                    .foregroundStyle(colorScheme.fishbowlPrimaryText)
-                                    .lineLimit(2)
-                                    .minimumScaleFactor(0.88)
-                            }
-
-                            Text("Save this bowl as a pet and unlock more fish, bowls, and customization.")
-                                .font(.system(size: isCompact ? 13 : 14, weight: .medium, design: .rounded))
-                                .foregroundStyle(colorScheme.fishbowlSecondaryText)
-                                .fixedSize(horizontal: false, vertical: true)
-
-                            Button {
-                                isPremiumSheetPresented = true
-                            } label: {
-                                Text("View All Benefits")
-                                    .font(.system(size: isCompact ? 15 : 16, weight: .semibold, design: .rounded))
-                                    .foregroundStyle(Color.white)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, isCompact ? 13 : 15)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 22, style: .continuous)
-                                            .fill(
-                                                LinearGradient(
-                                                    colors: [
-                                                        Color(red: 0.15, green: 0.28, blue: 0.57),
-                                                        Color(red: 0.15, green: 0.54, blue: 0.89),
-                                                    ],
-                                                    startPoint: .leading,
-                                                    endPoint: .trailing
-                                                )
-                                            )
-                                    )
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(generatedDraft.profile.name)
+                        .font(.system(.largeTitle, design: .serif)).tracking(-0.6)
+                    Text(generatedDraft.analysis.headline)
+                        .font(.subheadline).foregroundStyle(.secondary)
                 }
+                .padding(.trailing, 35)
+                AquariumCatalogPreview(configuration: generatedDraft.profile.configuration,
+                                       profile: generatedDraft.profile, animated: !isPremiumSheetPresented)
+                    .frame(height: min(size.height * 0.42, 365))
+                    .clipShape(.rect(cornerRadius: 32))
+                VStack(alignment: .leading, spacing: 9) {
+                    Text(generatedDraft.profile.configuration.descriptor)
+                        .font(.system(.title3, design: .serif))
+                    Text(generatedDraft.analysis.detailLine)
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if premiumStore.isPremiumUnlocked {
+                    Button("Keep this bowl", systemImage: "checkmark", action: keepGeneratedBowl)
+                        .buttonStyle(StudioPrimaryButtonStyle())
+                } else {
+                    Text("Keep your creation with Glass Premium.")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                    Button("Explore Premium", systemImage: "sparkle") { isPremiumSheetPresented = true }
+                        .buttonStyle(StudioPrimaryButtonStyle())
+                }
+                Button("Hum another", systemImage: "arrow.counterclockwise") { resetCreationFlow(clearStatus: true) }
+                    .font(.subheadline).frame(maxWidth: .infinity).padding(.vertical, 10)
             }
-            .padding(.horizontal, isCompact ? 18 : 22)
-
-            Spacer(minLength: bottomSpacer)
+            .frame(maxWidth: 480).padding(.horizontal, 26).padding(.top, 76).padding(.bottom, 28)
+            .frame(maxWidth: .infinity)
         }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            guard premiumStore.isPremiumUnlocked else { return }
-            keepGeneratedBowl()
-        }
+        .scrollIndicators(.hidden)
     }
 
     private var micHoldGesture: some Gesture {
@@ -770,13 +474,13 @@ private struct AddTankPage: View {
     private var stageTitle: String {
         switch stage {
         case .idle:
-            return ""
+            return "Hum a little\nworld to life."
         case .opening:
             return "Listening"
         case .recording:
-            return "Hum"
+            return "Listening to you."
         case .analyzing:
-            return "Analyzing"
+            return "A world from\nyour sound."
         case .preview:
             return ""
         }
@@ -784,8 +488,7 @@ private struct AddTankPage: View {
 
     private var recordingCounterLine: String {
         let elapsed = maxRecordingDuration * Double(recordingProgress)
-        let remaining = max(0, maxRecordingDuration - elapsed)
-        return String(format: "%.1fs recorded  •  %.1fs left", elapsed, remaining)
+        return String(format: "%.1f / 8 seconds", elapsed)
     }
 
     private func handleTick(_ now: Date) {
@@ -833,16 +536,17 @@ private struct AddTankPage: View {
             case .ready:
                 break
             case .justGranted:
-                resetCreationFlow(clearStatus: true)
+                statusMessage = "Microphone ready. Hold the glass to begin."
+                resetCreationFlow(clearStatus: false)
                 return
             case .denied:
-                statusMessage = "Microphone off"
+                statusMessage = "Microphone access is off. You can allow it in Settings."
                 HumHaptics.warning()
                 resetCreationFlow(clearStatus: false)
                 return
             }
 
-            guard isTouchActive else {
+            guard isTouchActive, stage == .opening else {
                 resetCreationFlow(clearStatus: false)
                 return
             }
@@ -854,7 +558,7 @@ private struct AddTankPage: View {
                 stage = .recording
                 HumHaptics.recordingStarted()
             } catch {
-                statusMessage = "Couldn’t start mic"
+                statusMessage = "The microphone could not start. Please try again."
                 HumHaptics.warning()
                 resetCreationFlow(clearStatus: false)
             }
@@ -930,22 +634,15 @@ private struct AddTankPage: View {
         UIApplication.shared.open(url)
     }
 
-    @ViewBuilder
     private func statusChip(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 13, weight: .semibold, design: .rounded))
-            .foregroundStyle(Color.white.opacity(0.88))
-            .padding(.horizontal, 14)
-            .padding(.vertical, 9)
-            .background {
-                Capsule(style: .continuous)
-                    .fill(Color.black.opacity(0.18))
-                    .overlay {
-                        Capsule(style: .continuous)
-                            .stroke(Color.white.opacity(0.16), lineWidth: 1)
-                    }
-            }
+        Label(text, systemImage: "info.circle")
+            .font(.caption).foregroundStyle(colorScheme.fishbowlSecondaryText)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(GlassPalette.mist.opacity(0.18), in: .rect(cornerRadius: 18))
     }
+
 }
 
 private enum HumCreationStage {
@@ -1108,6 +805,13 @@ private final class HumBowlRecorder: ObservableObject {
     @Published private(set) var permissionDenied = false
 
     private let core = HumBowlRecorderCore()
+
+    #if DEBUG
+    func showVisualFixture(denied: Bool) {
+        permissionDenied = denied
+        waveformLevels = (0..<24).map { index in 0.08 + CGFloat(abs(sin(Double(index) * 0.7))) * 0.72 }
+    }
+    #endif
 
     func ensurePermission() async -> HumMicPermissionState {
         switch AVAudioApplication.shared.recordPermission {
@@ -1343,6 +1047,11 @@ private enum HumBowlGenerator {
             }
         }
 
+        let firstFeature = picker.pick(recipe.featurePool)
+        let features = analysis.averageLevel > 0.52
+            ? [firstFeature, picker.pick(recipe.featurePool.filter { $0 != firstFeature })]
+            : [firstFeature]
+
         let profile = BowlProfile(
             name: "\(picker.pick(recipe.adjectives)) \(picker.pick(recipe.nouns))",
             configuration: AquariumConfiguration(
@@ -1354,7 +1063,8 @@ private enum HumBowlGenerator {
                 companions: companions,
                 substrate: picker.pick(recipe.substratePool),
                 decoration: picker.pick(recipe.decorationPool),
-                featurePiece: picker.pick(recipe.featurePool)
+                featurePiece: firstFeature,
+                featurePieces: features
             ),
             mode: .pet,
             petState: .fresh()
@@ -1368,11 +1078,11 @@ private enum HumBowlGenerator {
         case .hush:
             return HumBowlRecipe(
                 vesselPool: [.orb, .gallery],
-                fishPool: [.royalBetta, .glassGold, .opalAngelfish, .sunsetRasbora],
+                fishPool: [.royalBetta, .glassGold, .opalAngelfish, .sunsetRasbora, .moonStingray, .pearlSeahorse, .crystalPuffer, .leafySeaDragon],
                 substratePool: [.pearlSand, .moonGravel],
                 decorationPool: [.minimal, .glassPearls],
-                featurePool: [.bubbleStone, .moonLantern],
-                companionPool: [.snail, .shrimp],
+                featurePool: [.bubbleStone, .moonLantern, .pearlShell],
+                companionPool: [.snail, .shrimp, .seaUrchin],
                 personality: .dreamy,
                 adjectives: ["Soft", "Silent", "Pearl", "Velvet"],
                 nouns: ["Lagoon", "Glass", "Drift", "Hush"]
@@ -1381,11 +1091,11 @@ private enum HumBowlGenerator {
         case .tide:
             return HumBowlRecipe(
                 vesselPool: [.orb, .panorama],
-                fishPool: [.moonKoi, .leopardShark, .glassGold, .silverArowana, .humpbackWhale],
+                fishPool: [.moonKoi, .leopardShark, .glassGold, .silverArowana, .humpbackWhale, .ribbonEel, .glassSailfish, .blueTang],
                 substratePool: [.obsidianSand, .moonGravel],
                 decorationPool: [.riverRocks, .glassPearls],
-                featurePool: [.driftwoodArch, .moonLantern, .kelp],
-                companionPool: [.crab, .snail, .seaCucumber],
+                featurePool: [.driftwoodArch, .moonLantern, .kelp, .seaFan],
+                companionPool: [.crab, .snail, .seaCucumber, .miniSubmarine, .seaUrchin],
                 personality: .shy,
                 adjectives: ["Blue", "Midnight", "Tidal", "Deep"],
                 nouns: ["Current", "Basin", "Reef", "Pool"]
@@ -1394,10 +1104,10 @@ private enum HumBowlGenerator {
         case .bloom:
             return HumBowlRecipe(
                 vesselPool: [.gallery, .panorama],
-                fishPool: [.moonKoi, .opalAngelfish, .glassGold, .royalBetta, .velvetDiscus],
+                fishPool: [.moonKoi, .opalAngelfish, .glassGold, .royalBetta, .velvetDiscus, .sunburstButterfly, .pearlSeahorse, .mandarinDragonet, .leafySeaDragon],
                 substratePool: [.pearlSand, .coralBloom, .moonGravel],
                 decorationPool: [.glassPearls, .riverRocks, .coralGarden],
-                featurePool: [.moonLantern, .bubbleStone, .kelp],
+                featurePool: [.moonLantern, .bubbleStone, .kelp, .pearlShell, .seaFan],
                 companionPool: [.shrimp, .nudibranchRibbon, .snail],
                 personality: .playful,
                 adjectives: ["Lush", "Bloom", "Golden", "Warm"],
@@ -1407,11 +1117,11 @@ private enum HumBowlGenerator {
         case .spark:
             return HumBowlRecipe(
                 vesselPool: [.panorama, .gallery],
-                fishPool: [.neonGuppy, .emberTetra, .opalAngelfish, .moonKoi, .sunsetRasbora],
+                fishPool: [.neonGuppy, .emberTetra, .opalAngelfish, .moonKoi, .sunsetRasbora, .mandarinDragonet, .blueTang, .ribbonEel],
                 substratePool: [.obsidianSand, .coralBloom, .moonGravel],
                 decorationPool: [.coralGarden, .glassPearls, .riverRocks],
                 featurePool: [.kelp, .moonLantern, .driftwoodArch],
-                companionPool: [.crab, .shrimp, .nudibranchFlame],
+                companionPool: [.crab, .shrimp, .nudibranchFlame, .miniSubmarine],
                 personality: .greedy,
                 adjectives: ["Neon", "Electric", "Bright", "Wild"],
                 nouns: ["Surge", "Pulse", "Flash", "Current"]
@@ -1494,376 +1204,48 @@ private struct SeededHumPicker {
     }
 }
 
-private struct HumCreationBackdrop: View {
-    let colors: [Color]
-    let isImmersive: Bool
-
-    var body: some View {
-        TimelineView(.animation) { timeline in
-            GeometryReader { geometry in
-                let phase = timeline.date.timeIntervalSinceReferenceDate
-                let palette = (colors + [Color(red: 0.13, green: 0.44, blue: 0.71)]).prefix(3)
-                let resolved = Array(palette)
-
-                ZStack {
-                    Ellipse()
-                        .fill(resolved[0].opacity(isImmersive ? 0.14 : 0.08))
-                        .frame(width: geometry.size.width * 0.84, height: geometry.size.height * 0.22)
-                        .blur(radius: 54)
-                        .offset(
-                            x: -geometry.size.width * 0.18,
-                            y: -geometry.size.height * (isImmersive ? 0.26 : 0.22)
-                        )
-
-                    Ellipse()
-                        .fill(resolved[1].opacity(isImmersive ? 0.08 : 0.05))
-                        .frame(width: geometry.size.width * 0.50, height: geometry.size.height * 0.16)
-                        .blur(radius: 36)
-                        .offset(
-                            x: geometry.size.width * 0.22,
-                            y: -geometry.size.height * 0.01
-                        )
-
-                    ForEach(0..<14, id: \.self) { index in
-                        let normalizedX = CGFloat((index * 17) % 100) / 100
-                        let loop = ((phase * 24) + Double(index * 31)).truncatingRemainder(dividingBy: Double(geometry.size.height + 180))
-                        let y = geometry.size.height + 90 - loop
-                        let x = geometry.size.width * (0.12 + normalizedX * 0.76)
-                        let drift = sin(phase * 0.65 + Double(index)) * 14
-                        let size = CGFloat(8 + (index % 3) * 5)
-
-                        Circle()
-                            .fill(Color.white.opacity(isImmersive ? 0.14 : 0.08))
-                            .frame(width: size, height: size)
-                            .blur(radius: size > 10 ? 1.4 : 0.6)
-                            .position(x: x + drift, y: y)
-                    }
-
-                    HumJellyfishDriftLayer(
-                        phase: phase,
-                        size: geometry.size,
-                        isImmersive: isImmersive,
-                        tint: resolved[2]
-                    )
-                }
-            }
-        }
-    }
-}
-
-private struct HumJellyfishDriftLayer: View {
-    let phase: TimeInterval
-    let size: CGSize
-    let isImmersive: Bool
-    let tint: Color
-
-    var body: some View {
-        let motionPhase = phase * 0.2
-
-        ForEach(0..<3, id: \.self) { index in
-            let cycleDuration = 24.0 + Double(index) * 5.5
-            let cycle = ((motionPhase + Double(index) * 7.0) / cycleDuration).truncatingRemainder(dividingBy: 1)
-            let start = 0.14 + Double(index) * 0.07
-            let end = start + 0.30
-            let visibility = jellyVisibility(progress: cycle, start: start, end: end)
-            let travel = max(0, min(1, (cycle - start) / max(end - start, 0.001)))
-            let baseX = size.width * [0.22, 0.74, 0.48][index]
-            let horizontalDrift = sin(motionPhase * (0.62 + Double(index) * 0.1) + Double(index) * 1.8)
-            let x = baseX + CGFloat(horizontalDrift) * (18 + CGFloat(index) * 8)
-            let y = size.height + 90 - CGFloat(travel) * (size.height + 220)
-            let jellySize = 62 + CGFloat(index) * 16
-            let scale = 0.84 + CGFloat(index) * 0.10 + CGFloat(sin(motionPhase * 1.1 + Double(index)) * 0.03)
-
-            HumJellyfishView(
-                phase: motionPhase + Double(index),
-                tint: tint,
-                size: jellySize
-            )
-            .scaleEffect(scale)
-            .position(x: x, y: y)
-            .opacity(visibility * (isImmersive ? 0.46 : 0.28))
-        }
-        .blendMode(.screen)
-        .allowsHitTesting(false)
-    }
-
-    private func jellyVisibility(progress: Double, start: Double, end: Double) -> Double {
-        guard progress >= start, progress <= end else { return 0 }
-        let normalized = (progress - start) / max(end - start, 0.001)
-        let fadeIn = min(1, normalized / 0.24)
-        let fadeOut = min(1, (1 - normalized) / 0.28)
-        return min(fadeIn, fadeOut)
-    }
-}
-
-private struct HumJellyfishView: View {
-    let phase: TimeInterval
-    let tint: Color
-    let size: CGFloat
-
-    private var tentacleGradient: LinearGradient {
-        LinearGradient(
-            colors: [
-                Color.white.opacity(0.72),
-                tint.opacity(0.30),
-                Color.clear,
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-    }
-
-    var body: some View {
-        ZStack(alignment: .top) {
-            HStack(alignment: .top, spacing: size * 0.055) {
-                ForEach(0..<5, id: \.self) { index in
-                    tentacle(index)
-                }
-            }
-            .offset(y: size * 0.28)
-
-            ZStack {
-                HumJellyBellShape()
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(0.82),
-                                tint.opacity(0.42),
-                                Color.clear.opacity(0.1),
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-
-                HumJellyBellShape()
-                    .stroke(Color.white.opacity(0.42), lineWidth: max(1, size * 0.022))
-
-                Ellipse()
-                    .fill(Color.white.opacity(0.28))
-                    .frame(width: size * 0.42, height: size * 0.10)
-                    .blur(radius: size * 0.03)
-                    .offset(x: -size * 0.08, y: size * 0.08)
-            }
-            .frame(width: size * 0.82, height: size * 0.50)
-        }
-        .frame(width: size, height: size * 1.15)
-        .shadow(color: tint.opacity(0.12), radius: size * 0.10, y: size * 0.06)
-        .blur(radius: 0.35)
-    }
-
-    @ViewBuilder
-    private func tentacle(_ index: Int) -> some View {
-        let height = size * (0.82 + CGFloat(index.isMultiple(of: 2) ? 0.02 : 0.14))
-        let swayBase = sin(phase * 2.6 + Double(index) * 0.8) * Double(size * 0.09)
-        let swayPulse = sin(phase * 1.8) * Double(size * 0.03)
-        let sway = CGFloat(swayBase + swayPulse)
-
-        HumJellyTentacleShape(sway: sway)
-            .stroke(
-                tentacleGradient,
-                style: StrokeStyle(lineWidth: max(1.2, size * 0.026), lineCap: .round)
-            )
-            .frame(width: size * 0.12, height: height)
-    }
-}
-
-private struct HumJellyBellShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        path.move(to: CGPoint(x: rect.midX, y: rect.minY))
-        path.addCurve(
-            to: CGPoint(x: rect.maxX, y: rect.height * 0.52),
-            control1: CGPoint(x: rect.width * 0.84, y: rect.minY),
-            control2: CGPoint(x: rect.maxX, y: rect.height * 0.18)
-        )
-        path.addQuadCurve(
-            to: CGPoint(x: rect.width * 0.78, y: rect.height * 0.88),
-            control: CGPoint(x: rect.maxX, y: rect.height * 0.94)
-        )
-        path.addQuadCurve(
-            to: CGPoint(x: rect.width * 0.22, y: rect.height * 0.88),
-            control: CGPoint(x: rect.midX, y: rect.height)
-        )
-        path.addQuadCurve(
-            to: CGPoint(x: rect.minX, y: rect.height * 0.52),
-            control: CGPoint(x: rect.minX, y: rect.height * 0.94)
-        )
-        path.addCurve(
-            to: CGPoint(x: rect.midX, y: rect.minY),
-            control1: CGPoint(x: rect.minX, y: rect.height * 0.18),
-            control2: CGPoint(x: rect.width * 0.16, y: rect.minY)
-        )
-        return path
-    }
-}
-
-private struct HumJellyTentacleShape: Shape {
-    let sway: CGFloat
-
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        path.move(to: CGPoint(x: rect.midX, y: rect.minY))
-        path.addCurve(
-            to: CGPoint(x: rect.midX + sway * 0.35, y: rect.maxY),
-            control1: CGPoint(x: rect.midX + sway * 0.16, y: rect.height * 0.24),
-            control2: CGPoint(x: rect.midX - sway, y: rect.height * 0.72)
-        )
-        return path
-    }
-}
-
-private struct HumTankChrome: View {
-    var cornerRadius: CGFloat = 38
-
-    var body: some View {
-        GeometryReader { geometry in
-            let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-
-            ZStack {
-                shape
-                    .stroke(Color.white.opacity(0.24), lineWidth: 1.2)
-
-                shape
-                    .inset(by: 3)
-                    .stroke(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(0.72),
-                                Color.white.opacity(0.06),
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
-
-                shape
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(0.08),
-                                Color.clear,
-                                Color.white.opacity(0.03),
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-
-                Rectangle()
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(0.24),
-                                Color.clear,
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-                    .frame(height: min(geometry.size.height * 0.22, 140))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    .clipShape(shape)
-                    .blendMode(.screen)
-            }
-            .shadow(color: Color.black.opacity(0.12), radius: 18, y: 8)
-        }
-        .allowsHitTesting(false)
-    }
-}
-
 private struct HumMicButton: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let stage: HumCreationStage
     let fillProgress: CGFloat
     let recordingProgress: CGFloat
     let waveformLevels: [CGFloat]
 
     var body: some View {
-        TimelineView(.animation) { timeline in
-            let phase = timeline.date.timeIntervalSinceReferenceDate
-
+        TimelineView(.animation(minimumInterval: 1 / 30, paused: reduceMotion)) { timeline in
+            let phase = reduceMotion ? 0 : timeline.date.timeIntervalSinceReferenceDate
+            let breath = 1 + sin(phase * 0.75) * 0.015
             ZStack {
-                Circle()
-                    .fill(Color.black.opacity(stage == .idle ? 0.18 : 0.24))
-                    .background {
-                        Circle()
-                            .fill(
-                                RadialGradient(
-                                    colors: [
-                                        Color.white.opacity(0.20),
-                                        Color(red: 0.06, green: 0.21, blue: 0.34).opacity(stage == .idle ? 0.78 : 0.92),
-                                    ],
-                                    center: .topLeading,
-                                    startRadius: 10,
-                                    endRadius: 180
-                                )
-                            )
-                    }
-
-                MicWaterFillShape(
-                    level: fillProgress,
-                    phase: phase,
-                    amplitude: stage == .idle ? 8 : 12
-                )
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.42, green: 0.84, blue: 0.98).opacity(0.95),
-                            Color(red: 0.16, green: 0.58, blue: 0.93).opacity(0.98),
-                            Color(red: 0.07, green: 0.32, blue: 0.76).opacity(1.0),
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .clipShape(Circle())
-
-                if stage == .analyzing {
-                    ForEach(0..<3, id: \.self) { index in
-                        Circle()
-                            .stroke(Color.white.opacity(0.24 - Double(index) * 0.05), lineWidth: 1.4)
-                            .scaleEffect(
-                                0.56 + CGFloat(index) * 0.16
-                                + CGFloat((sin(phase * 2.1 - Double(index)) + 1) * 0.08)
-                            )
-                    }
-                } else {
-                    Image(systemName: "mic.fill")
-                        .font(.system(size: stage == .idle ? 46 : 42, weight: .medium))
-                        .foregroundStyle(Color.white.opacity(0.92))
-                        .offset(y: stage == .recording ? -14 : -6)
+                ForEach(0..<2, id: \.self) { index in
+                    Circle().stroke(GlassPalette.sea.opacity(0.09 - Double(index) * 0.025), lineWidth: 1)
+                        .scaleEffect((1.19 + Double(index) * 0.18) * breath)
                 }
-
-                Circle()
-                    .trim(from: 0, to: stage == .recording ? max(0.02, recordingProgress) : 0)
-                    .stroke(
-                        Color.white.opacity(0.98),
-                        style: StrokeStyle(lineWidth: 4, lineCap: .round)
-                    )
-                    .rotationEffect(.degrees(-90))
-                    .padding(6)
-                    .opacity(stage == .recording ? 1 : 0)
-
-                Circle()
-                    .stroke(Color.white.opacity(0.28), lineWidth: 1.2)
-
-                Circle()
-                    .inset(by: 4)
-                    .stroke(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(0.72),
-                                Color.white.opacity(0.08),
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
+                Circle().fill(.white.opacity(colorScheme == .dark ? 0.05 : 0.34))
+                    .glassEffect(.regular, in: .circle)
+                MicWaterFillShape(level: fillProgress, phase: phase, amplitude: reduceMotion ? 0 : 7)
+                    .fill(LinearGradient(colors: [GlassPalette.mist.opacity(0.46), GlassPalette.sea.opacity(0.74)],
+                                         startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .clipShape(.circle)
+                Circle().fill(RadialGradient(colors: [.white.opacity(0.64), .clear, GlassPalette.sea.opacity(0.17)],
+                                            center: .topLeading, startRadius: 0, endRadius: 230))
+                Ellipse().fill(.white.opacity(0.72)).frame(width: 61, height: 16)
+                    .blur(radius: 5).rotationEffect(.degrees(-38)).offset(x: -53, y: -62)
+                if stage != .analyzing {
+                    Image(systemName: stage == .recording ? "waveform" : "mic")
+                        .font(.system(size: 40, weight: .ultraLight))
+                        .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.90) : GlassPalette.ink.opacity(0.78))
+                        .contentTransition(.symbolEffect(.replace))
+                }
+                Circle().strokeBorder(LinearGradient(colors: [.white.opacity(0.96), GlassPalette.sea.opacity(0.19), .white.opacity(0.76)],
+                                                     startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1.5)
+                Circle().trim(from: 0, to: stage == .recording ? max(0.01, recordingProgress) : 0)
+                    .stroke(GlassPalette.sea, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                    .rotationEffect(.degrees(-90)).padding(-7)
             }
-            .shadow(color: Color.black.opacity(0.22), radius: 26, y: 14)
+            .shadow(color: GlassPalette.sea.opacity(0.13), radius: 28, x: 0, y: 22)
         }
+        .accessibilityHidden(true)
     }
 }
 
@@ -1912,8 +1294,8 @@ private struct HumWaveformView: View {
                     .fill(
                         LinearGradient(
                             colors: [
-                                Color.white.opacity(0.92),
-                                Color(red: 0.72, green: 0.90, blue: 1.00).opacity(0.74),
+                                GlassPalette.sea,
+                                GlassPalette.mist,
                             ],
                             startPoint: .top,
                             endPoint: .bottom
@@ -1931,50 +1313,19 @@ private struct HumWaveformView: View {
 }
 
 private struct HumAnalysisView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
-        TimelineView(.animation) { timeline in
-            let phase = timeline.date.timeIntervalSinceReferenceDate
-            let scanOffset = sin(phase * 1.2) * 20
-
-            ZStack {
-                HStack(alignment: .center, spacing: 7) {
-                    ForEach(0..<11, id: \.self) { index in
-                        let sample = (sin(phase * 2.1 + Double(index) * 0.72) + 1) * 0.5
-
-                        Capsule(style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        Color.white.opacity(0.94),
-                                        Color(red: 0.68, green: 0.89, blue: 1.0).opacity(0.58),
-                                    ],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
-                            .frame(width: 5, height: 12 + sample * 28)
-                    }
+        TimelineView(.animation(minimumInterval: 1 / 30, paused: reduceMotion)) { timeline in
+            let phase = reduceMotion ? 0 : timeline.date.timeIntervalSinceReferenceDate
+            HStack(spacing: 13) {
+                ForEach(0..<3, id: \.self) { index in
+                    Circle().fill(GlassPalette.sea.opacity(0.55)).frame(width: 12, height: 12)
+                        .overlay { Circle().strokeBorder(.white.opacity(0.8), lineWidth: 1) }
+                        .offset(y: sin(phase * 1.8 + Double(index) * 1.3) * 7)
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-
-                Rectangle()
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color.clear,
-                                Color.white.opacity(0.80),
-                                Color.clear,
-                            ],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                    .frame(height: 2)
-                    .blur(radius: 0.8)
-                    .offset(y: scanOffset)
             }
         }
+        .accessibilityLabel("Creating your aquarium")
     }
 }
 
@@ -2022,90 +1373,208 @@ private enum HumHaptics {
     }
 }
 
-private struct PremiumUpsellPage: View {
-    @Environment(\.colorScheme) private var colorScheme
-
-    let currentTankCount: Int
-    let safeAreaInsets: EdgeInsets
-    let onUnlock: () -> Void
+private struct AquariumThemePicker: View {
+    @Binding var selection: AquariumTheme
 
     var body: some View {
-        ZStack {
-            AmbientScreenBackdrop(configuration: premiumPreviewConfiguration)
-
-            VStack(spacing: 24) {
-                Spacer(minLength: max(36, safeAreaInsets.top + 22))
-
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Glass Premium")
-                        .font(.system(size: 44, weight: .medium, design: .serif))
-                        .foregroundStyle(colorScheme.fishbowlPrimaryText)
-
-                    Text("You already filled your \(currentTankCount) free tanks. Unlock up to 12 tanks, mix different fish together, and open up the richer decor and feature pieces.")
-                        .font(.system(size: 17, weight: .medium, design: .rounded))
-                        .foregroundStyle(colorScheme.fishbowlSecondaryText)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 28)
-
-                GlassPanel(cornerRadius: 38) {
-                    VStack(alignment: .leading, spacing: 18) {
-                        AquariumSceneView(
-                            configuration: premiumPreviewConfiguration,
-                            format: .studioHero,
-                            phase: 0.32,
-                            petSnapshot: .decorative(at: .now)
-                        )
-                        .frame(height: 280)
-
-                        VStack(alignment: .leading, spacing: 8) {
-                            PremiumBullet(text: "Up to 12 saved tanks instead of 3")
-                            PremiumBullet(text: "Mixed-species schools with an expanded premium fish set")
-                            PremiumBullet(text: "Feature pieces like driftwood, lanterns, and kelp")
-                        }
-
-                        ActionGlassButton(title: "Unlock Premium", systemImage: "crown.fill") {
-                            onUnlock()
+        GlassPanel {
+            VStack(alignment: .leading, spacing: 16) {
+                StudioSectionHeading(title: "Bowl theme", detail: "Wall colors with matching light and reflections.")
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Solid colors").font(.subheadline.weight(.medium))
+                    HStack(alignment: .top, spacing: 12) {
+                        ForEach(AquariumTheme.wallColors) { theme in
+                            AquariumThemeTile(theme: theme, selected: selection == theme) { selection = theme }
+                                .frame(maxWidth: .infinity)
                         }
                     }
                 }
-                .padding(.horizontal, 22)
-
-                Spacer(minLength: max(24, safeAreaInsets.bottom + 12))
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Palettes").font(.subheadline.weight(.medium))
+                    ScrollViewReader { scroll in
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(alignment: .top, spacing: 12) {
+                                ForEach(AquariumTheme.palettes) { theme in
+                                    AquariumThemeTile(theme: theme, selected: selection == theme) { selection = theme }
+                                        .frame(width: 136).id(theme)
+                                }
+                            }
+                            .padding(2)
+                        }
+                        .onAppear { scroll.scrollTo(selection, anchor: .center) }
+                    }
+                }
             }
+        }
+        .sensoryFeedback(.selection, trigger: selection)
+    }
+}
+
+private struct AquariumThemeTile: View {
+    @ScaledMetric(relativeTo: .caption) private var labelHeight: CGFloat = 36
+    let theme: AquariumTheme
+    let selected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 7) {
+                ZStack(alignment: .topTrailing) {
+                    RoundedRectangle(cornerRadius: 17)
+                        .fill(LinearGradient(colors: theme.swatchColors, startPoint: .topLeading, endPoint: .bottomTrailing))
+                    RoundedRectangle(cornerRadius: 17)
+                        .fill(RadialGradient(colors: [.white.opacity(0.30), .clear], center: .topLeading,
+                                             startRadius: 0, endRadius: 100))
+                    if theme == .sunset {
+                        RoundedRectangle(cornerRadius: 17)
+                            .fill(RadialGradient(colors: [.yellow.opacity(0.90), .yellow.opacity(0.30), .clear],
+                                                 center: UnitPoint(x: 0.24, y: 0.23), startRadius: 0, endRadius: 39))
+                        RoundedRectangle(cornerRadius: 17)
+                            .fill(RadialGradient(colors: [.yellow.opacity(0.90), .yellow.opacity(0.30), .clear],
+                                                 center: UnitPoint(x: 0.75, y: 0.77), startRadius: 0, endRadius: 38))
+                    }
+                    Canvas { context, size in
+                        if theme == .neonJungle {
+                            for index in -1..<6 {
+                                let x = CGFloat(index) * size.width / 4.6
+                                let bend = index.isMultiple(of: 2) ? 13.0 : -10.0
+                                var stripe = Path()
+                                stripe.move(to: CGPoint(x: x, y: -4))
+                                stripe.addCurve(to: CGPoint(x: x + bend, y: size.height + 4),
+                                                control1: CGPoint(x: x + 31, y: size.height * 0.30),
+                                                control2: CGPoint(x: x - 17, y: size.height * 0.70))
+                                stripe.addCurve(to: CGPoint(x: x + 10, y: -4),
+                                                control1: CGPoint(x: x - 4, y: size.height * 0.62),
+                                                control2: CGPoint(x: x + 38, y: size.height * 0.34))
+                                stripe.closeSubpath()
+                                context.fill(stripe, with: .color(Color(red: 0.95, green: 0.15, blue: 0.57)))
+                            }
+                        }
+                        for index in 0..<3 {
+                            let x = CGFloat(index) * size.width * 0.35
+                            var curve = Path()
+                            curve.move(to: CGPoint(x: x - 20, y: -5))
+                            curve.addCurve(to: CGPoint(x: x + 55, y: size.height + 5),
+                                           control1: CGPoint(x: x + 90, y: size.height * 0.35),
+                                           control2: CGPoint(x: x - 30, y: size.height * 0.68))
+                            context.stroke(curve, with: .color(.white.opacity(index == 1 ? 0.38 : 0.15)), lineWidth: 1.2)
+                        }
+                    }
+                    .clipShape(.rect(cornerRadius: 17))
+                    if selected {
+                        Image(systemName: "checkmark")
+                            .font(.caption.weight(.bold)).foregroundStyle(.white)
+                            .padding(6).background(.black.opacity(0.55), in: .circle)
+                            .padding(7)
+                    }
+                }
+                .frame(height: 66)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 17)
+                        .strokeBorder(selected ? GlassPalette.sea : .white.opacity(0.45), lineWidth: selected ? 2 : 1)
+                }
+                Text(theme.title).font(.caption.weight(.medium))
+                    .frame(height: labelHeight, alignment: .topLeading)
+                    .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(GlassPressStyle())
+        .accessibilityLabel(theme.title)
+        .accessibilityValue(theme.summary)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityHint("Changes the bowl walls and lighting")
+        .accessibilityIdentifier("theme.\(theme.rawValue)")
+    }
+}
+
+private enum StudioEditorSection: String, CaseIterable, Identifiable {
+    case fish = "Fish", habitat = "Habitat", companions = "Friends", details = "Details"
+    var id: Self { self }
+}
+
+private struct KeyboardDismissTapObserver: UIViewRepresentable {
+    let onTap: (CGPoint) -> Void
+
+    func makeUIView(context: Context) -> ObserverView {
+        let view = ObserverView()
+        view.isUserInteractionEnabled = false
+        view.onTap = onTap
+        return view
+    }
+
+    func updateUIView(_ view: ObserverView, context: Context) { view.onTap = onTap }
+
+    static func dismantleUIView(_ view: ObserverView, coordinator: ()) { view.detach() }
+
+    final class ObserverView: UIView, UIGestureRecognizerDelegate {
+        var onTap: ((CGPoint) -> Void)?
+        private weak var observedWindow: UIWindow?
+        private lazy var tap: UITapGestureRecognizer = {
+            let recognizer = TapObserver(target: self, action: #selector(didTap))
+            recognizer.cancelsTouchesInView = false
+            recognizer.delaysTouchesEnded = false
+            recognizer.delegate = self
+            return recognizer
+        }()
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            detach()
+            observedWindow = window
+            window?.addGestureRecognizer(tap)
+        }
+
+        func detach() {
+            observedWindow?.removeGestureRecognizer(tap)
+            observedWindow = nil
+        }
+
+        @objc private func didTap() {
+            guard tap.state == .ended else { return }
+            onTap?(tap.location(in: self))
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            // The window also contains the keyboard; observe only this screen's content.
+            return bounds.contains(touch.location(in: self))
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                               shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            true
         }
     }
 
-    private var premiumPreviewConfiguration: AquariumConfiguration {
-        AquariumConfiguration(
-            vesselStyle: .panorama,
-            fishSpecies: .glassGold,
-            fishCount: .duet,
-            additionalFishSpecies: [.opalAngelfish],
-            companion: .crab,
-            substrate: .moonGravel,
-            decoration: .glassPearls,
-            featurePiece: .moonLantern
-        )
+    final class TapObserver: UITapGestureRecognizer {
+        // Native menus must neither cancel this observer nor lose their own tap.
+        override func canPrevent(_ preventedGestureRecognizer: UIGestureRecognizer) -> Bool { false }
+        override func canBePrevented(by preventingGestureRecognizer: UIGestureRecognizer) -> Bool { false }
     }
 }
 
 private struct TankComposerScreen: View {
+    private enum ScrollTarget: Hashable { case name }
+
     @Environment(\.colorScheme) private var colorScheme
 
     @State private var draft: BowlProfile
+    @State private var editorSection: StudioEditorSection = .fish
     @State private var previewFormat: AquariumDisplayFormat = .studioHero
     @State private var isPremiumSheetPresented = false
     @FocusState private var isNameFieldFocused: Bool
+    @State private var nameFieldFrame: CGRect = .zero
+    @Namespace private var composerCoordinateSpace
     @ObservedObject var premiumStore: PremiumStore
 
     let onSave: (BowlProfile) -> Void
     let onCancel: () -> Void
+    var isEditing = false
 
     init(
         initialProfile: BowlProfile,
         premiumStore: PremiumStore,
+        isEditing: Bool = false,
         onSave: @escaping (BowlProfile) -> Void,
         onCancel: @escaping () -> Void
     ) {
@@ -2113,6 +1582,7 @@ private struct TankComposerScreen: View {
         self.premiumStore = premiumStore
         self.onSave = onSave
         self.onCancel = onCancel
+        self.isEditing = isEditing
     }
 
     private var orderedVessels: [AquariumVesselStyle] {
@@ -2169,36 +1639,69 @@ private struct TankComposerScreen: View {
         )
     }
 
-    private func previewHeroHeight(for width: CGFloat) -> CGFloat {
-        min(max(width * 0.92, 360), 420)
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                LiquidGlassBackdrop()
+                VStack(spacing: 18) {
+                    composerHeader
+                    previewSection(heroHeight: min(geometry.size.height * 0.35, 320))
+                    Picker("Edit aquarium", selection: $editorSection) {
+                        ForEach(StudioEditorSection.allCases) { section in
+                            Text(section.rawValue).tag(section)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("editor.sections")
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            VStack(spacing: 18) { controlsSection }
+                                .padding(.bottom, 28)
+                        }
+                        .scrollIndicators(.hidden)
+                        .scrollDismissesKeyboard(.interactively)
+                        .scrollEdgeEffectStyle(.soft, for: .top)
+                        .onChange(of: isNameFieldFocused) { revealNameField(using: proxy) }
+                        .onChange(of: geometry.size.height) { revealNameField(using: proxy) }
+                    }
+                    .id(editorSection)
+                }
+                .frame(maxWidth: 680)
+                .padding(.horizontal, 22).padding(.top, 12)
+                .frame(maxWidth: .infinity)
+            }
+            .contentShape(Rectangle())
+            .background(KeyboardDismissTapObserver { location in
+                // Keep cursor placement and text selection inside the field working.
+                guard isNameFieldFocused, !nameFieldFrame.contains(location) else { return }
+                isNameFieldFocused = false
+            })
+            .coordinateSpace(name: composerCoordinateSpace)
+        }
+        .foregroundStyle(colorScheme.fishbowlPrimaryText)
+        .tint(GlassPalette.sea)
+        .sheet(isPresented: $isPremiumSheetPresented) { PremiumUnlockSheet(store: premiumStore) }
+        .task { await premiumStore.prepare() }
+        .onChange(of: editorSection) { isNameFieldFocused = false }
+        #if DEBUG
+        .onAppear {
+            let args = ProcessInfo.processInfo.arguments
+            if let index = args.firstIndex(of: "-AquariumFeatures"), args.indices.contains(index + 1) {
+                draft.configuration.featurePieces = args[index + 1].split(separator: ",").compactMap { FeaturePieceStyle(rawValue: String($0)) }
+            }
+            if let index = args.firstIndex(of: "-AquariumEditorSection"), args.indices.contains(index + 1),
+               let section = StudioEditorSection(rawValue: args[index + 1]) { editorSection = section }
+            if let index = args.firstIndex(of: "-AquariumTheme"), args.indices.contains(index + 1),
+               let theme = AquariumTheme(rawValue: args[index + 1]) { draft.configuration.theme = theme }
+        }
+        #endif
     }
 
-    var body: some View {
-        NavigationStack {
-            GeometryReader { geometry in
-                ZStack {
-                    AmbientScreenBackdrop(
-                        configuration: draft.configuration,
-                        renderStyle: .lightweight
-                    )
-
-                    ScrollView(.vertical, showsIndicators: false) {
-                        VStack(alignment: .leading, spacing: 22) {
-                            composerHeader
-                            previewSection(heroHeight: previewHeroHeight(for: geometry.size.width))
-                            detailsSection
-                            controlsSection
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.top, 16)
-                        .padding(.bottom, 34)
-                    }
-                }
-                .navigationBarHidden(true)
-            }
-        }
-        .sheet(isPresented: $isPremiumSheetPresented) {
-            PremiumUnlockSheet(store: premiumStore)
+    private func revealNameField(using proxy: ScrollViewProxy) {
+        guard isNameFieldFocused else { return }
+        // Recenter after keyboard resizing as well as the initial focus change.
+        withAnimation(.easeOut(duration: 0.25)) {
+            proxy.scrollTo(ScrollTarget.name, anchor: .center)
         }
     }
 
@@ -2262,104 +1765,65 @@ private struct TankComposerScreen: View {
     }
 
     private var composerHeader: some View {
-        GlassPanel(cornerRadius: 34) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    IconGlassButton(systemImage: "xmark") {
-                        onCancel()
-                    }
-
-                    Spacer()
-
-                    if !premiumStore.isPremiumUnlocked {
-                        ActionGlassButton(title: "Go Premium", systemImage: "crown.fill") {
-                            isPremiumSheetPresented = true
-                        }
-                    }
-
-                    ActionGlassButton(title: "Add Tank", systemImage: "checkmark") {
-                        onSave(sanitizedDraft)
-                    }
-                }
-
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("New Tank")
-                        .font(.system(size: 38, weight: .medium, design: .serif))
-                        .foregroundStyle(colorScheme.fishbowlPrimaryText)
-
-                    Text("Set the name, choose the fish, and decide if this one stays a pet or just sits there and looks good.")
-                        .font(.system(size: 16, weight: .medium, design: .rounded))
-                        .foregroundStyle(colorScheme.fishbowlSecondaryText)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                if !premiumStore.isPremiumUnlocked {
-                    PremiumComposerBanner {
-                        isPremiumSheetPresented = true
-                    }
-                }
-            }
+        HStack(spacing: 14) {
+            IconGlassButton(systemImage: "xmark", action: onCancel)
+            Text(isEditing ? "Your aquarium" : "A new bowl")
+                .font(.system(.title2, design: .serif)).lineLimit(1).minimumScaleFactor(0.75)
+            Spacer(minLength: 0)
+            Button(isEditing ? "Save" : "Create") { onSave(sanitizedDraft) }
+                .font(.subheadline.weight(.medium))
+                .buttonStyle(.glassProminent).tint(GlassPalette.sea).foregroundStyle(.white).controlSize(.large)
+                .accessibilityIdentifier("editor.save")
         }
     }
 
-    @ViewBuilder
     private func previewSection(heroHeight: CGFloat) -> some View {
-        GlassPanel(cornerRadius: 34) {
-            VStack(alignment: .leading, spacing: 18) {
-                Group {
-                    switch previewFormat {
-                    case .studioHero:
-                        AquariumSceneView(
-                            configuration: previewConfiguration,
-                            format: .studioHero,
-                            phase: 0.24,
-                            petSnapshot: draft.petSnapshot(at: .now)
-                        )
-                        .frame(maxWidth: .infinity)
+        ZStack(alignment: .bottomTrailing) {
+            Group {
+                if previewFormat == .studioHero {
+                    AquariumCatalogPreview(configuration: previewConfiguration, animated: !isPremiumSheetPresented,
+                                           focusY: editorSection == .habitat || editorSection == .companions ? -1.0 : nil)
                         .frame(height: heroHeight)
-                        .drawingGroup(opaque: false)
-                    default:
-                        WidgetSizePreview(
-                            configuration: previewConfiguration,
-                            format: previewFormat,
-                            petSnapshot: draft.petSnapshot(at: .now)
-                        )
-                    }
-                }
-
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
-                        ForEach([AquariumDisplayFormat.studioHero, .widgetSmall, .widgetMedium, .widgetLarge]) { option in
-                            SelectablePill(
-                                title: option.title,
-                                subtitle: option == .studioHero ? "Big preview" : "Widget size",
-                                isSelected: previewFormat == option
-                            ) {
-                                previewFormat = option
-                            }
-                        }
-                    }
+                } else {
+                    WidgetSizePreview(configuration: previewConfiguration, format: previewFormat,
+                                      petSnapshot: draft.petSnapshot(at: .now))
+                        .frame(height: heroHeight)
                 }
             }
+            .frame(maxWidth: .infinity)
+            .clipShape(.rect(cornerRadius: 30))
+            Menu {
+                Picker("Preview", selection: $previewFormat) {
+                    Text("Aquarium").tag(AquariumDisplayFormat.studioHero)
+                    Text("Small widget").tag(AquariumDisplayFormat.widgetSmall)
+                    Text("Medium widget").tag(AquariumDisplayFormat.widgetMedium)
+                    Text("Large widget").tag(AquariumDisplayFormat.widgetLarge)
+                }
+            } label: {
+                Label("Preview", systemImage: "rectangle.on.rectangle")
+                    .font(.caption.weight(.medium)).padding(.horizontal, 12).padding(.vertical, 10)
+            }
+            .glassEffect(.regular.interactive(), in: .capsule)
+            .padding(12)
         }
     }
 
     private var detailsSection: some View {
         GlassPanel {
                 VStack(alignment: .leading, spacing: 14) {
-                    SectionEyebrow(
+                    StudioSectionHeading(
                         title: "Details",
-                        detail: "Give this tank a name. Pet mode is the default, but you can switch it to decorative."
+                        detail: "Name your bowl and choose how to care for it."
                     )
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("TANK NAME")
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    Text("Bowl name")
+                        .font(.system(size: 11, weight: .semibold, design: .default))
                         .tracking(1.2)
                         .foregroundStyle(.secondary)
 
-                    TextField("Blue Bowl", text: $draft.name)
-                        .font(.system(size: 16, weight: .medium, design: .rounded))
+                    TextField("My little aquarium", text: $draft.name)
+                        .font(.system(size: 16, weight: .medium, design: .default))
                         .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.86) : Color.black.opacity(0.86))
                         .textInputAutocapitalization(.words)
                         .padding(.horizontal, 14)
@@ -2373,6 +1837,10 @@ private struct TankComposerScreen: View {
                                 }
                         }
                         .focused($isNameFieldFocused)
+                        .onGeometryChange(for: CGRect.self) { geometry in
+                            geometry.frame(in: .named(composerCoordinateSpace))
+                        } action: { nameFieldFrame = $0 }
+                        .id(ScrollTarget.name)
                 }
 
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -2392,42 +1860,26 @@ private struct TankComposerScreen: View {
         }
     }
 
+    @ViewBuilder
     private var controlsSection: some View {
-        VStack(spacing: 16) {
-            GlassPanel {
-                VStack(alignment: .leading, spacing: 14) {
-                    SectionEyebrow(
-                        title: "Vessel",
-                        detail: "Choose the kind of bowl or tank you want."
-                    )
+        switch editorSection {
+        case .fish:
+            fishControls
+            personalityControls
+        case .habitat:
+            AquariumThemePicker(selection: $draft.configuration.theme)
+            habitatControls
+        case .companions: companionControls
+        case .details: detailsSection
+        }
+    }
 
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 10) {
-                            ForEach(orderedVessels) { option in
-                            SelectablePill(
-                                title: option.title,
-                                subtitle: option.summary,
-                                isSelected: draft.configuration.vesselStyle == option,
-                                badge: premiumBadge(isPremium: option.isPremium),
-                                isLocked: option.isPremium && !premiumStore.isPremiumUnlocked
-                            ) {
-                                if option.isPremium && !premiumStore.isPremiumUnlocked {
-                                    isPremiumSheetPresented = true
-                                } else {
-                                    draft.configuration.vesselStyle = option
-                                }
-                            }
-                        }
-                    }
-                }
-                }
-            }
-
-            GlassPanel {
+    private var fishControls: some View {
+        GlassPanel {
                 VStack(alignment: .leading, spacing: 14) {
-                    SectionEyebrow(
+                    StudioSectionHeading(
                         title: "Fish",
-                        detail: "Pick the fish and how many you want swimming around. Premium can also mix different species together."
+                        detail: "Choose a glass sculpture, then its company."
                     )
 
                     ScrollView(.horizontal, showsIndicators: false) {
@@ -2455,7 +1907,7 @@ private struct TankComposerScreen: View {
                             ForEach(FishCount.allCases) { option in
                                 SelectablePill(
                                     title: option.title,
-                                    subtitle: "Fish count",
+                                    subtitle: nil,
                                     isSelected: draft.configuration.fishCount == option
                                 ) {
                                     draft.configuration.fishCount = option
@@ -2469,8 +1921,8 @@ private struct TankComposerScreen: View {
                         VStack(alignment: .leading, spacing: 10) {
                             ForEach(0..<visibleAdditionalFishSlotCount, id: \.self) { slot in
                                 VStack(alignment: .leading, spacing: 8) {
-                                    Text("FISH \(slot + 2)")
-                                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                    Text("Fish \(slot + 2)")
+                                        .font(.system(size: 11, weight: .semibold, design: .default))
                                         .tracking(1.2)
                                         .foregroundStyle(.secondary)
 
@@ -2478,7 +1930,7 @@ private struct TankComposerScreen: View {
                                         HStack(spacing: 10) {
                                             SelectablePill(
                                                 title: "None",
-                                                subtitle: "Leave this slot empty",
+                                                subtitle: nil,
                                                 isSelected: selectedAdditionalSpecies(at: slot) == nil
                                             ) {
                                                 setAdditionalSpecies(nil, at: slot)
@@ -2507,12 +1959,14 @@ private struct TankComposerScreen: View {
                     }
                 }
             }
+    }
 
-            GlassPanel {
+    private var personalityControls: some View {
+        GlassPanel {
                 VStack(alignment: .leading, spacing: 14) {
-                    SectionEyebrow(
+                    StudioSectionHeading(
                         title: "Personality",
-                        detail: "Choose the overall mood and motion for this tank."
+                        detail: "Set the pace of this little world."
                     )
 
                     ScrollView(.horizontal, showsIndicators: false) {
@@ -2530,12 +1984,14 @@ private struct TankComposerScreen: View {
                     }
                 }
             }
+    }
 
-            GlassPanel {
+    private var habitatControls: some View {
+        GlassPanel {
                 VStack(alignment: .leading, spacing: 14) {
-                    SectionEyebrow(
+                    StudioSectionHeading(
                         title: "Habitat",
-                        detail: "Choose the bottom and the little details that sit inside the bowl."
+                        detail: "Soft sand and a few sculpted pieces."
                     )
 
                     ScrollView(.horizontal, showsIndicators: false) {
@@ -2578,20 +2034,32 @@ private struct TankComposerScreen: View {
                         }
                     }
 
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 10) {
-                            ForEach(orderedFeaturePieces) { option in
-                                SelectablePill(
-                                    title: option.title,
-                                    subtitle: option.summary,
-                                    isSelected: draft.configuration.featurePiece == option,
-                                    badge: premiumBadge(isPremium: option.isPremium),
-                                    isLocked: option.isPremium && !premiumStore.isPremiumUnlocked
-                                ) {
-                                    if option.isPremium && !premiumStore.isPremiumUnlocked {
-                                        isPremiumSheetPresented = true
-                                    } else {
-                                        draft.configuration.featurePiece = option
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Choose up to two feature pieces. We'll arrange them together.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        ForEach(0..<2, id: \.self) { slot in
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Feature piece \(slot + 1)")
+                                    .font(.subheadline.weight(.medium))
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 10) {
+                                        ForEach(orderedFeaturePieces) { option in
+                                            SelectablePill(
+                                                title: option == .none ? "None" : option.title,
+                                                subtitle: option == .none ? nil : option.summary,
+                                                isSelected: draft.configuration.feature(at: slot) == option,
+                                                badge: premiumBadge(isPremium: option.isPremium),
+                                                isLocked: option.isPremium && !premiumStore.isPremiumUnlocked
+                                            ) {
+                                                if option.isPremium && !premiumStore.isPremiumUnlocked {
+                                                    isPremiumSheetPresented = true
+                                                } else {
+                                                    draft.configuration.setFeature(option, at: slot)
+                                                }
+                                            }
+                                            .accessibilityIdentifier("feature.\(slot).\(option.rawValue)")
+                                        }
                                     }
                                 }
                             }
@@ -2599,21 +2067,23 @@ private struct TankComposerScreen: View {
                     }
                 }
             }
+    }
 
-            GlassPanel {
+    private var companionControls: some View {
+        GlassPanel {
                 VStack(alignment: .leading, spacing: 14) {
-                    SectionEyebrow(
-                        title: "Companion",
+                    StudioSectionHeading(
+                        title: "Companions",
                         detail: premiumStore.isPremiumUnlocked
-                        ? "Pick up to three companions, or leave the tank simple."
-                        : "Pick one companion, or leave the tank simple."
+                        ? "Up to three little companions."
+                        : "A little company for your aquarium."
                     )
 
                     VStack(alignment: .leading, spacing: 10) {
                         ForEach(0..<visibleCompanionSlotCount, id: \.self) { slot in
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("COMPANION \(slot + 1)")
-                                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                Text("Companion \(slot + 1)")
+                                    .font(.system(size: 11, weight: .semibold, design: .default))
                                     .tracking(1.2)
                                     .foregroundStyle(.secondary)
 
@@ -2621,7 +2091,7 @@ private struct TankComposerScreen: View {
                                     HStack(spacing: 10) {
                                         SelectablePill(
                                             title: "None",
-                                            subtitle: "Leave this slot empty",
+                                            subtitle: nil,
                                             isSelected: selectedCompanion(at: slot) == nil
                                         ) {
                                             setCompanion(nil, at: slot)
@@ -2649,7 +2119,6 @@ private struct TankComposerScreen: View {
                     }
                 }
             }
-        }
     }
 
     private var previewConfiguration: AquariumConfiguration {
@@ -2670,6 +2139,7 @@ private struct TankComposerScreen: View {
         draft.configuration.additionalFishSpecies = Array(
             draft.configuration.additionalFishSpecies.prefix(max(0, draft.configuration.fishCount.value - 1))
         )
+        draft.configuration.featurePieces = draft.configuration.resolvedFeaturePieces
         if !premiumStore.isPremiumUnlocked {
             draft.configuration = draft.configuration.sanitizedForFreeTier()
         }
@@ -2677,229 +2147,33 @@ private struct TankComposerScreen: View {
     }
 }
 
-private struct WidgetSizePreview: View {
-    @Environment(\.colorScheme) private var colorScheme
+struct GlassBowlEditor: View {
+    @StateObject private var premiumStore = PremiumStore()
+    let profile: BowlProfile
+    let isEditing: Bool
+    let onSave: (BowlProfile) -> Void
+    let onCancel: () -> Void
 
+    var body: some View {
+        TankComposerScreen(initialProfile: profile, premiumStore: premiumStore, isEditing: isEditing,
+                           onSave: onSave, onCancel: onCancel)
+    }
+}
+
+private struct WidgetSizePreview: View {
     let configuration: AquariumConfiguration
     let format: AquariumDisplayFormat
     let petSnapshot: AquariumPetSnapshot
-
     var body: some View {
         GeometryReader { geometry in
-            let tileSize = previewTileSize(for: geometry.size.width)
-            let tileShape = RoundedRectangle(cornerRadius: tileCornerRadius, style: .continuous)
-
-            ZStack {
-                AquariumTileBackground()
-                    .clipShape(tileShape)
-
-                AquariumSceneView(
-                    configuration: configuration,
-                    format: format,
-                    phase: petSnapshot.date.timeIntervalSinceReferenceDate / 8.0,
-                    petSnapshot: petSnapshot
-                )
-                .padding(tileSceneInset)
-                .drawingGroup(opaque: false)
-            }
-            .frame(width: tileSize.width, height: tileSize.height)
-            .clipShape(tileShape)
-            .overlay {
-                tileShape
-                    .stroke(colorScheme == .dark ? Color.white.opacity(0.24) : Color.white.opacity(0.72), lineWidth: 1)
-            }
-            .shadow(color: colorScheme == .dark ? Color.black.opacity(0.24) : Color.black.opacity(0.10), radius: 16, y: 10)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            let preferredWidth = format == .widgetSmall ? min(180, geometry.size.width * 0.6) : geometry.size.width - 28
+            let width = min(preferredWidth, max(0, geometry.size.height - 24) * format.aspectRatio)
+            AquariumGlassStillView(configuration: configuration, format: format, phase: 0, petSnapshot: petSnapshot)
+                .frame(width: width, height: width / format.aspectRatio)
+                .clipShape(.rect(cornerRadius: 26))
+                .shadow(color: GlassPalette.ink.opacity(0.10), radius: 12, y: 6)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(height: stageHeight)
-    }
-
-    private var tileCornerRadius: CGFloat {
-        format == .widgetMedium ? 30 : 32
-    }
-
-    private var tileSceneInset: CGFloat {
-        switch format {
-        case .widgetSmall:
-            return 2
-        case .widgetMedium:
-            return 4
-        case .widgetLarge:
-            return 6
-        default:
-            return 0
-        }
-    }
-
-    private var stageHeight: CGFloat {
-        switch format {
-        case .widgetSmall:
-            return 205
-        case .widgetMedium:
-            return 190
-        case .widgetLarge:
-            return 340
-        default:
-            return 360
-        }
-    }
-
-    private func previewTileSize(for availableWidth: CGFloat) -> CGSize {
-        let width: CGFloat
-
-        switch format {
-        case .widgetSmall:
-            width = min(190, availableWidth * 0.60)
-        case .widgetMedium:
-            width = min(availableWidth, 380)
-        case .widgetLarge:
-            width = min(availableWidth, 390)
-        default:
-            width = availableWidth
-        }
-
-        return CGSize(width: width, height: width / format.aspectRatio)
-    }
-}
-
-private struct AnimatedAquariumStage: View {
-    let profile: BowlProfile
-    let configuration: AquariumConfiguration
-    let format: AquariumDisplayFormat
-    let isFocused: Bool
-    let isPrepared: Bool
-    let isScrollFrozen: Bool
-    let feedBursts: [AquariumFeedBurst]
-    let onFeed: (CGFloat) -> Void
-    let onFeedConsumed: AquariumFeedBurstConsumedHandler
-    @State private var tapRipples: [AquariumTapRipple] = []
-
-    private var restingPhase: Double {
-        Double(abs(profile.id.hashValue % 997)) / 47.0
-    }
-
-    var body: some View {
-        GeometryReader { geometry in
-            Group {
-                if isPrepared {
-                    ZStack {
-                        AquariumStaticBackdropView(
-                            configuration: configuration,
-                            format: format,
-                            phase: restingPhase,
-                            petSnapshot: profile.petSnapshot(at: .now),
-                            showsDecoration: configuration.decoration != .coralGarden
-                        )
-                        .allowsHitTesting(false)
-
-                        SpriteKitAquariumSceneView(
-                            profile: profile,
-                            configuration: configuration,
-                            format: format,
-                            feedBursts: feedBursts,
-                            tapRipples: tapRipples,
-                            phaseOffset: restingPhase,
-                            isPaused: !isFocused || isScrollFrozen,
-                            onFeedBurstConsumed: onFeedConsumed
-                        )
-                        .allowsHitTesting(false)
-
-                        if configuration.decoration == .coralGarden {
-                            AquariumDecorationForegroundOverlayView(
-                                configuration: configuration,
-                                format: format,
-                                phase: restingPhase
-                            )
-                            .allowsHitTesting(false)
-                        }
-                    }
-                } else {
-                    restingScene
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .contentShape(Rectangle())
-            .highPriorityGesture(
-                SpatialTapGesture()
-                    .onEnded { value in
-                        registerInteraction(at: value.location, in: geometry.size)
-                    }
-            )
-        }
-    }
-
-    private var restingScene: some View {
-        AquariumSceneView(
-            configuration: configuration,
-            format: format,
-            phase: restingPhase,
-            petSnapshot: profile.petSnapshot(at: .now),
-            foodPellets: []
-        )
-    }
-
-    private func registerInteraction(at location: CGPoint, in size: CGSize) {
-        let inset = format.bodyInset
-        let width = max(size.width - inset * 2, 1)
-        let height = max(size.height, 1)
-        let normalizedLocation = CGPoint(
-            x: min(max((location.x - inset) / width, 0.04), 0.96),
-            y: min(max(location.y / height, 0.10), 0.90)
-        )
-        let now = Date.now
-
-        tapRipples = Array(
-            (tapRipples.filter { now.timeIntervalSince($0.startedAt) < 1.2 } + [
-                AquariumTapRipple(startedAt: now, normalizedLocation: normalizedLocation)
-            ])
-            .suffix(6)
-        )
-
-        onFeed(normalizedLocation.x)
-    }
-}
-
-private struct TankDetailCard: View {
-    @Environment(\.colorScheme) private var colorScheme
-
-    let profile: BowlProfile
-
-    var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(profile.configuration.vesselStyle.title)
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(1.2)
-
-                Text(profile.configuration.descriptor)
-                    .font(.system(size: 17, weight: .semibold, design: .serif))
-                    .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.88) : Color.black.opacity(0.86))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.84)
-
-                Text(profile.configuration.detailLine)
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
-                    .foregroundStyle(colorScheme.fishbowlTertiaryText)
-                    .lineLimit(2)
-            }
-
-            Spacer(minLength: 0)
-        }
-        .frame(maxWidth: 360, alignment: .leading)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .background {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(colorScheme.fishbowlCardFill)
-                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .stroke(colorScheme.fishbowlCardStroke, lineWidth: 1)
-                }
-        }
-        .shadow(color: colorScheme.fishbowlShadow, radius: 18, y: 8)
     }
 }
 
@@ -2922,7 +2196,7 @@ private struct PhotoShareCard: View {
                     renderStyle: .lightweight
                 )
 
-                AquariumSceneView(
+                AquariumGlassStillView(
                     configuration: profile.configuration,
                     format: .widgetLarge,
                     phase: renderDate.timeIntervalSinceReferenceDate / 4.1,
@@ -2967,7 +2241,7 @@ private struct ShareInfoPlaque: View {
                 .minimumScaleFactor(0.76)
 
             Text(subtitle)
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .font(.system(size: 11, weight: .semibold, design: .default))
                 .tracking(0.4)
                 .foregroundStyle(colorScheme.fishbowlSecondaryText)
                 .lineLimit(1)
@@ -2989,334 +2263,49 @@ private struct ShareInfoPlaque: View {
 }
 
 private struct AmbientScreenBackdrop: View {
-    enum RenderStyle {
-        case full
-        case lightweight
-    }
-
-    @Environment(\.colorScheme) private var colorScheme
-
+    enum RenderStyle { case full, lightweight }
     let configuration: AquariumConfiguration
     var renderStyle: RenderStyle = .full
-
-    var body: some View {
-        GeometryReader { geometry in
-            let size = geometry.size
-            let palette = configuration.ambientBackdropColors
-            let fieldYOffset = colorScheme == .dark
-            ? -size.height * (renderStyle == .lightweight ? 0.20 : 0.24)
-            : -size.height * (renderStyle == .lightweight ? 0.14 : 0.18)
-
-            ZStack {
-                backgroundBase
-
-                ZStack {
-                    Ellipse()
-                        .fill(palette[0].opacity(colorScheme == .dark ? primaryOpacity : primaryOpacity * 0.74))
-                        .frame(width: size.width * (renderStyle == .lightweight ? 0.94 : 1.06), height: size.height * (renderStyle == .lightweight ? 0.36 : 0.46))
-                        .blur(radius: renderStyle == .lightweight ? 62 : 96)
-                        .offset(x: -size.width * 0.18, y: size.height * (renderStyle == .lightweight ? 0.00 : 0.05))
-                        .blendMode(colorScheme == .dark ? .screen : .multiply)
-
-                    Ellipse()
-                        .fill(palette[1].opacity(colorScheme == .dark ? secondaryOpacity : secondaryOpacity * 0.74))
-                        .frame(width: size.width * (renderStyle == .lightweight ? 0.88 : 1.02), height: size.height * (renderStyle == .lightweight ? 0.34 : 0.44))
-                        .blur(radius: renderStyle == .lightweight ? 54 : 90)
-                        .offset(x: size.width * 0.18, y: size.height * (renderStyle == .lightweight ? 0.03 : 0.08))
-                        .blendMode(colorScheme == .dark ? .screen : .multiply)
-
-                    if renderStyle == .full {
-                        Ellipse()
-                            .fill(palette[2].opacity(colorScheme == .dark ? 0.09 : 0.06))
-                            .frame(width: size.width * 0.90, height: size.height * 0.38)
-                            .blur(radius: 82)
-                            .offset(x: 0, y: size.height * 0.20)
-                            .blendMode(colorScheme == .dark ? .screen : .multiply)
-                    }
-
-                    if colorScheme == .dark {
-                        ZStack {
-                            Ellipse()
-                                .fill(
-                                    LinearGradient(
-                                        colors: [
-                                            palette[0].opacity(renderStyle == .lightweight ? 0.024 : 0.05),
-                                            palette[2].opacity(renderStyle == .lightweight ? 0.032 : 0.07),
-                                            Color.clear,
-                                        ],
-                                        startPoint: .leading,
-                                        endPoint: .trailing
-                                    )
-                                )
-                                .frame(
-                                    width: size.width * (renderStyle == .lightweight ? 0.76 : 0.92),
-                                    height: size.height * (renderStyle == .lightweight ? 0.16 : 0.22)
-                                )
-                                .rotationEffect(.degrees(-6))
-                                .offset(x: -size.width * 0.08, y: size.height * (renderStyle == .lightweight ? 0.08 : 0.13))
-
-                            Ellipse()
-                                .fill(
-                                    LinearGradient(
-                                        colors: [
-                                            Color.clear,
-                                            palette[1].opacity(renderStyle == .lightweight ? 0.028 : 0.06),
-                                            palette[2].opacity(renderStyle == .lightweight ? 0.026 : 0.05),
-                                        ],
-                                        startPoint: .leading,
-                                        endPoint: .trailing
-                                    )
-                                )
-                                .frame(
-                                    width: size.width * (renderStyle == .lightweight ? 0.84 : 0.98),
-                                    height: size.height * (renderStyle == .lightweight ? 0.18 : 0.24)
-                                )
-                                .rotationEffect(.degrees(9))
-                                .offset(x: size.width * 0.10, y: size.height * (renderStyle == .lightweight ? 0.10 : 0.16))
-                        }
-                        .blur(radius: renderStyle == .lightweight ? 44 : 76)
-                        .blendMode(.screen)
-                    } else {
-                        Ellipse()
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        palette[0].opacity(renderStyle == .lightweight ? 0.018 : 0.026),
-                                        palette[2].opacity(renderStyle == .lightweight ? 0.022 : 0.032),
-                                        Color.clear,
-                                    ],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
-                            .frame(
-                                width: size.width * (renderStyle == .lightweight ? 0.96 : 1.08),
-                                height: size.height * (renderStyle == .lightweight ? 0.18 : 0.24)
-                            )
-                            .rotationEffect(.degrees(-4))
-                            .blur(radius: renderStyle == .lightweight ? 58 : 88)
-                            .offset(y: size.height * (renderStyle == .lightweight ? 0.10 : 0.15))
-                            .blendMode(.multiply)
-
-                        Ellipse()
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        Color.clear,
-                                        palette[1].opacity(renderStyle == .lightweight ? 0.016 : 0.024),
-                                        palette[2].opacity(renderStyle == .lightweight ? 0.018 : 0.026),
-                                    ],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
-                            .frame(
-                                width: size.width * (renderStyle == .lightweight ? 0.82 : 0.94),
-                                height: size.height * (renderStyle == .lightweight ? 0.16 : 0.20)
-                            )
-                            .rotationEffect(.degrees(11))
-                            .blur(radius: renderStyle == .lightweight ? 52 : 80)
-                            .offset(x: size.width * 0.08, y: size.height * (renderStyle == .lightweight ? 0.12 : 0.17))
-                            .blendMode(.multiply)
-                    }
-                }
-                .opacity(renderStyle == .lightweight ? (colorScheme == .dark ? 0.24 : 0.24) : (colorScheme == .dark ? 0.44 : 0.42))
-                .offset(y: fieldYOffset)
-                .mask {
-                    Rectangle()
-                        .fill(
-                            LinearGradient(
-                                stops: [
-                                    .init(color: .clear, location: 0.00),
-                                    .init(color: .white.opacity(0.06), location: 0.08),
-                                    .init(color: .white, location: 0.22),
-                                    .init(color: .white, location: 0.72),
-                                    .init(color: .white.opacity(0.08), location: 0.88),
-                                    .init(color: .clear, location: 1.00),
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                        .overlay {
-                            LinearGradient(
-                                stops: [
-                                    .init(color: .clear, location: 0.00),
-                                    .init(color: .white.opacity(0.12), location: 0.10),
-                                    .init(color: .white, location: 0.24),
-                                    .init(color: .white, location: 0.76),
-                                    .init(color: .white.opacity(0.12), location: 0.90),
-                                    .init(color: .clear, location: 1.00),
-                                ],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                            .blendMode(.multiply)
-                        }
-                }
-
-                VStack(spacing: 0) {
-                    LinearGradient(
-                        colors: topFadeColors,
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                    .frame(height: size.height * 0.30)
-
-                    Spacer(minLength: 0)
-
-                    LinearGradient(
-                        colors: bottomFadeColors,
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                    .frame(height: size.height * 0.30)
-                }
-            }
-            .ignoresSafeArea()
-        }
-    }
-
-    private var backgroundBase: Color {
-        colorScheme == .dark
-        ? Color.black
-        : Color.white
-    }
-
-    private var primaryOpacity: Double {
-        renderStyle == .lightweight ? 0.08 : 0.12
-    }
-
-    private var secondaryOpacity: Double {
-        renderStyle == .lightweight ? 0.07 : 0.10
-    }
-
-    private var topFadeColors: [Color] {
-        if colorScheme == .dark {
-            return [
-                backgroundBase,
-                backgroundBase.opacity(0.98),
-                backgroundBase.opacity(0.62),
-                Color.clear,
-            ]
-        }
-
-        return [
-            Color.white,
-            Color.white.opacity(0.98),
-            Color.white.opacity(0.40),
-            Color.clear,
-        ]
-    }
-
-    private var bottomFadeColors: [Color] {
-        if colorScheme == .dark {
-            return [
-                Color.clear,
-                backgroundBase.opacity(0.52),
-                backgroundBase.opacity(0.98),
-                backgroundBase,
-            ]
-        }
-
-        return [
-            Color.clear,
-            Color.white.opacity(0.36),
-            Color.white.opacity(0.98),
-            Color.white,
-        ]
-    }
+    var body: some View { LiquidGlassBackdrop() }
 }
 
 private struct ActionGlassButton: View {
-    @Environment(\.colorScheme) private var colorScheme
-
     let title: String
     let systemImage: String
     let action: () -> Void
-
     var body: some View {
-        Button(action: action) {
-            Label(title, systemImage: systemImage)
-                .font(.system(size: 14, weight: .semibold, design: .rounded))
-                .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.82) : Color.black.opacity(0.82))
-                .padding(.horizontal, 14)
-                .padding(.vertical, 11)
-                .background {
-                    Capsule(style: .continuous)
-                        .fill(colorScheme.fishbowlGlassButtonFill)
-                        .overlay {
-                            Capsule(style: .continuous)
-                                .stroke(colorScheme.fishbowlGlassButtonStroke, lineWidth: 1)
-                        }
-                }
-        }
-        .buttonStyle(.plain)
+        Button(title, systemImage: systemImage, action: action)
+            .font(.subheadline.weight(.medium)).buttonStyle(.glass).controlSize(.large)
     }
 }
 
 private struct IconGlassButton: View {
-    @Environment(\.colorScheme) private var colorScheme
-
     let systemImage: String
     let action: () -> Void
-
     var body: some View {
         Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.76) : Color.black.opacity(0.78))
-                .frame(width: 42, height: 42)
-                .background {
-                    Circle()
-                        .fill(colorScheme == .dark ? Color.white.opacity(0.08) : Color.white.opacity(0.20))
-                        .overlay {
-                            Circle()
-                                .stroke(colorScheme == .dark ? Color.white.opacity(0.18) : Color.white.opacity(0.72), lineWidth: 1)
-                        }
-                }
+            Image(systemName: systemImage).font(.system(size: 17, weight: .regular))
+                .frame(width: 46, height: 46)
+                .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: .circle)
+        .buttonStyle(GlassPressStyle())
+        .accessibilityLabel(systemImage == "xmark" ? "Close" : systemImage == "trash" ? "Delete bowl" : "Share aquarium")
     }
 }
 
-private struct PremiumComposerBanner: View {
-    @Environment(\.colorScheme) private var colorScheme
-
-    let onUnlock: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                Image(systemName: "crown.fill")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Color(red: 0.72, green: 0.55, blue: 0.09))
-
-                Text("Free includes 3 tanks")
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.86) : Color.black.opacity(0.84))
-
-                Spacer(minLength: 0)
-            }
-
-            Text("Unlock up to 12 tanks, mix different fish together, and open up the richer habitats and feature pieces.")
-                .font(.system(size: 14, weight: .medium, design: .rounded))
-                .foregroundStyle(colorScheme.fishbowlSecondaryText)
-                .fixedSize(horizontal: false, vertical: true)
-
-            ActionGlassButton(title: "Unlock Premium", systemImage: "crown.fill") {
-                onUnlock()
-            }
-        }
-        .padding(16)
-        .background {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(colorScheme == .dark ? Color.white.opacity(0.08) : Color.white.opacity(0.16))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .stroke(colorScheme == .dark ? Color.white.opacity(0.16) : Color.white.opacity(0.80), lineWidth: 1)
-                }
-        }
+private struct StudioPrimaryButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.font(.body.weight(.medium))
+            .frame(maxWidth: .infinity).padding(.vertical, 17)
+            .foregroundStyle(.white)
+            .background(GlassPalette.sea, in: .capsule)
+            .overlay { Capsule().strokeBorder(.white.opacity(0.25), lineWidth: 1) }
+            .opacity(isEnabled ? (configuration.isPressed ? 0.78 : 1) : 0.45)
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.98 : 1)
+            .animation(.easeOut(duration: 0.18), value: configuration.isPressed)
     }
 }
 
@@ -3328,12 +2317,12 @@ private struct PremiumBullet: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Circle()
-                .fill(Color(red: 0.73, green: 0.57, blue: 0.12))
+                .fill(GlassPalette.sea)
                 .frame(width: 8, height: 8)
                 .padding(.top, 6)
 
             Text(text)
-                .font(.system(size: 15, weight: .medium, design: .rounded))
+                .font(.system(size: 15, weight: .medium, design: .default))
                 .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.74) : Color.black.opacity(0.72))
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -3348,153 +2337,96 @@ private struct PremiumUnlockSheet: View {
     private var showcaseConfiguration: AquariumConfiguration {
         AquariumConfiguration(
             vesselStyle: .panorama,
-            fishSpecies: .glassGold,
+            fishSpecies: .moonStingray,
             fishCount: .duet,
-            additionalFishSpecies: [.opalAngelfish],
-            companion: .crab,
+            additionalFishSpecies: [.pearlSeahorse],
+            companion: .miniSubmarine,
             substrate: .moonGravel,
             decoration: .glassPearls,
-            featurePiece: .moonLantern
+            featurePiece: .pearlShell
         )
     }
 
     var body: some View {
         NavigationStack {
             ZStack {
-                AmbientScreenBackdrop(
-                    configuration: showcaseConfiguration,
-                    renderStyle: .lightweight
-                )
-
-                ScrollView(.vertical, showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 22) {
-                        GlassPanel(cornerRadius: 34, showsGlassEffect: false) {
-                            VStack(alignment: .leading, spacing: 14) {
-                                HStack {
-                                    Text("Glass Premium")
-                                        .font(.system(size: 36, weight: .medium, design: .serif))
-                                        .foregroundStyle(colorScheme.fishbowlPrimaryText)
-
-                                    Spacer()
-
-                                    IconGlassButton(systemImage: "xmark") {
-                                        dismiss()
-                                    }
-                                }
-
-                                Text("Unlock the full aquarium with 12 tanks, mixed-species schools, richer habitats, and feature pieces.")
-                                    .font(.system(size: 16, weight: .medium, design: .rounded))
-                                    .foregroundStyle(colorScheme.fishbowlSecondaryText)
-                                    .fixedSize(horizontal: false, vertical: true)
-
-                                AquariumSceneView(
-                                    configuration: showcaseConfiguration,
-                                    format: .studioHero,
-                                    phase: 0.28,
-                                    petSnapshot: .decorative(at: .now)
-                                )
-                                .frame(height: 260)
-                                .drawingGroup(opaque: false)
-                            }
+                LiquidGlassBackdrop()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 24) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("More room to imagine.")
+                                .font(.system(.largeTitle, design: .serif)).tracking(-0.7)
+                            Text("Glass Premium").font(.subheadline.weight(.medium)).foregroundStyle(GlassPalette.sea)
                         }
-
-                        GlassPanel(showsGlassEffect: false) {
-                            VStack(alignment: .leading, spacing: 14) {
-                                PremiumBullet(text: "Save up to 12 tanks instead of 3")
-                                PremiumBullet(text: "Mix different fish species together in the same tank")
-                                PremiumBullet(text: "Unlock Panorama Tank plus premium fish like Leopard Shark, Glass Goldfish, Sunset Rasbora, Velvet Discus, Silver Arowana, and Humpback Whale")
-                                PremiumBullet(text: "Unlock Coral Garden, Glass Pearls, Moon Gravel, Coral Bloom, Shrimp, and Crab")
-                                PremiumBullet(text: "Add feature pieces like driftwood arches, moon lanterns, and kelp")
-                            }
+                        AquariumGlassStillView(configuration: showcaseConfiguration, format: .widgetMedium,
+                                               phase: 0, petSnapshot: .decorative(at: .now))
+                            .clipShape(.rect(cornerRadius: 28))
+                        VStack(alignment: .leading, spacing: 18) {
+                            PremiumBullet(text: "Keep the aquariums you create by humming")
+                            PremiumBullet(text: "A collection of up to 12 bowls")
+                            PremiumBullet(text: "Every glass fish, with mixed-species schools")
+                            PremiumBullet(text: "All sculpted props and up to three companions")
                         }
-
                         if let statusMessage = store.statusMessage {
-                            Text(statusMessage)
-                                .font(.system(size: 14, weight: .medium, design: .rounded))
-                                .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.62) : Color.black.opacity(0.62))
-                                .padding(.horizontal, 8)
+                            Label(statusMessage, systemImage: "info.circle")
+                                .font(.caption).foregroundStyle(.secondary)
+                                .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                                .background(GlassPalette.mist.opacity(0.16), in: .rect(cornerRadius: 18))
                         }
-
-                        VStack(spacing: 12) {
-                            Button {
-                                Task {
-                                    await store.purchasePremium()
-                                }
-                            } label: {
-                                Text(store.purchaseButtonTitle)
-                                    .font(.system(size: 17, weight: .semibold, design: .rounded))
-                                    .foregroundStyle(Color.white)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 15)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 22, style: .continuous)
-                                            .fill(
-                                                LinearGradient(
-                                                    colors: [
-                                                        Color(red: 0.16, green: 0.24, blue: 0.48),
-                                                        Color(red: 0.24, green: 0.48, blue: 0.88),
-                                                    ],
-                                                    startPoint: .leading,
-                                                    endPoint: .trailing
-                                                )
-                                            )
-                                    )
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(store.isBusy)
-
-                            Button("Restore Purchases") {
-                                Task {
-                                    await store.restorePurchases()
+                        VStack(spacing: 15) {
+                            Button { Task { await store.purchasePremium() } } label: {
+                                HStack(spacing: 10) {
+                                    if store.isBusy { ProgressView().tint(.white) }
+                                    Text(store.purchaseButtonTitle)
                                 }
                             }
-                            .font(.system(size: 15, weight: .semibold, design: .rounded))
-                            .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.74) : Color.black.opacity(0.72))
-                            .disabled(store.isBusy)
-
+                            .buttonStyle(StudioPrimaryButtonStyle()).disabled(store.isBusy)
+                            Text("One purchase. Yours to keep.").font(.caption).foregroundStyle(.secondary)
+                            Button("Restore purchases") { Task { await store.restorePurchases() } }
+                                .font(.subheadline).disabled(store.isBusy)
                             #if DEBUG
-                            Button(store.isPreviewUnlocked ? "Disable Preview Unlock" : "Use Preview Unlock") {
-                                store.togglePreviewUnlock()
-                            }
-                            .font(.system(size: 14, weight: .medium, design: .rounded))
-                            .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.56) : Color.black.opacity(0.54))
+                            DisclosureGroup("Developer options") {
+                                Button(store.isPreviewUnlocked ? "Disable preview unlock" : "Use preview unlock") { store.togglePreviewUnlock() }
+                                    .font(.caption).padding(.vertical, 10)
+                            }.font(.caption).foregroundStyle(.secondary).padding(.top, 12)
                             #endif
                         }
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 16)
-                    .padding(.bottom, 28)
+                    .frame(maxWidth: 540).padding(.horizontal, 26).padding(.vertical, 22)
+                    .frame(maxWidth: .infinity)
+                }
+                .scrollIndicators(.hidden)
+            }
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Close", systemImage: "xmark") { dismiss() }.labelStyle(.iconOnly)
                 }
             }
-            .navigationBarHidden(true)
         }
-        .task {
-            await store.prepare()
-        }
-        .onChange(of: store.isPremiumUnlocked) { _, unlocked in
-            if unlocked {
-                dismiss()
-            }
-        }
+        .foregroundStyle(colorScheme.fishbowlPrimaryText)
+        .tint(GlassPalette.sea)
+        .task { await store.prepare() }
+        .onChange(of: store.isPremiumUnlocked) { _, unlocked in if unlocked { dismiss() } }
     }
 }
 
+
 private extension ColorScheme {
     var fishbowlPrimaryText: Color {
-        self == .dark ? Color.white.opacity(0.92) : Color.black.opacity(0.90)
+        self == .dark ? Color(red: 0.90, green: 0.95, blue: 0.92) : GlassPalette.ink
     }
 
     var fishbowlSecondaryText: Color {
-        self == .dark ? Color.white.opacity(0.68) : Color.black.opacity(0.60)
+        self == .dark ? Color.white.opacity(0.68) : GlassPalette.ink.opacity(0.68)
     }
 
     var fishbowlTertiaryText: Color {
-        self == .dark ? Color.white.opacity(0.56) : Color.black.opacity(0.56)
+        self == .dark ? Color.white.opacity(0.60) : GlassPalette.ink.opacity(0.64)
     }
 
     var fishbowlElevatedFill: Color {
         self == .dark
-        ? Color(red: 0.12, green: 0.13, blue: 0.17).opacity(0.86)
+        ? GlassPalette.night.opacity(0.86)
         : Color.white
     }
 
@@ -3573,7 +2505,7 @@ private final class PremiumStore: ObservableObject {
         await loadProductIfNeeded()
 
         guard let premiumProduct else {
-            statusMessage = "Create the non-consumable product \(PremiumAccess.productID) in App Store Connect or attach a StoreKit config to test purchases."
+            statusMessage = "Purchases are unavailable right now. Please try again later."
             return
         }
 
@@ -3695,17 +2627,9 @@ private struct ActivityView: UIViewControllerRepresentable {
 
 private extension AquariumConfiguration {
     func withFallbackStyle(_ style: AquariumVesselStyle) -> AquariumConfiguration {
-        AquariumConfiguration(
-            vesselStyle: vesselStyle == .orb && style != .orb ? style : vesselStyle,
-            fishSpecies: fishSpecies,
-            fishCount: fishCount,
-            additionalFishSpecies: additionalFishSpecies,
-            personality: personality,
-            companion: companion,
-            substrate: substrate,
-            decoration: decoration,
-            featurePiece: featurePiece
-        )
+        var copy = self
+        if vesselStyle == .orb && style != .orb { copy.vesselStyle = style }
+        return copy
     }
 
     var ambientBackdropColors: [Color] {

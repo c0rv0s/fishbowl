@@ -1,0 +1,4 @@
+Current preview views: 1
+Peak preview views during transitions: 4
+Peak preview views after layout settled: 2
+Visited bowls: 12 of 12

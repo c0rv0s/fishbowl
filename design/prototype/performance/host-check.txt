@@ -1,0 +1,6 @@
+Optimized Swift 6, Apple M3 Pro, macOS.
+PASS: cold preparation 651.6 ms, 105 main-actor heartbeats, largest heartbeat gap 6.8 ms
+PASS: cached catalog 0.060 ms; shared mesh/pipeline buffers, route reuse, canceled request, route-free widgets
+
+Existing companion regression: all 112 habitat combinations passed.
+PASS: rock climbing, arch passage, shrimp/submarine clearance, visible snail attachment, independent rests, eased starts/stops, orientation, reduced motion and 30/60 fps. Duration: 46.7 s.

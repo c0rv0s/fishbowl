@@ -39,8 +39,8 @@ struct BowlProfileQuery: EntityQuery {
 }
 
 struct AquariumWidgetIntent: WidgetConfigurationIntent {
-    static let title: LocalizedStringResource = "Choose Bowl"
-    static let description = IntentDescription("Pick one of your saved bowls or tanks for the widget.")
+    static let title: LocalizedStringResource = "Choose a bowl"
+    static let description = IntentDescription("Choose an aquarium from your collection.")
 
     @Parameter(title: "Bowl")
     var profile: BowlProfileEntity?
@@ -96,7 +96,7 @@ struct FishbowlWidget: Widget {
         AppIntentConfiguration(kind: kind, intent: AquariumWidgetIntent.self, provider: FishbowlTimelineProvider()) { entry in
             FishbowlWidgetEntryView(entry: entry)
         }
-        .configurationDisplayName("Fishbowl")
+        .configurationDisplayName("Glass Aquarium")
         .description("A little glass aquarium for your Home Screen.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
         .contentMarginsDisabled()
@@ -105,16 +105,32 @@ struct FishbowlWidget: Widget {
 
 private struct FishbowlWidgetEntryView: View {
     @Environment(\.widgetFamily) private var family
+    @Environment(\.colorScheme) private var colorScheme
     let entry: FishbowlEntry
 
     var body: some View {
-        AquariumSceneView(
-            configuration: resolvedConfiguration,
-            format: displayFormat,
-            phase: entry.date.timeIntervalSinceReferenceDate / 8.0,
-            petSnapshot: entry.profile.petSnapshot(at: entry.date)
-        )
-        .padding(sceneInset)
+        Group {
+        if let image = AquariumGlassSnapshots.image(configuration: entry.profile.configuration, format: displayFormat,
+                                                    snapshot: entry.profile.petSnapshot(at: entry.date), daylight: colorScheme != .dark) {
+            GeometryReader { geometry in
+                Image(uiImage: image).resizable().scaledToFill()
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .clipped()
+                    .accessibilityLabel("\(entry.profile.name), \(entry.profile.widgetSubtitle)")
+            }
+        } else {
+            VStack(spacing: 12) {
+                Image(systemName: "fish")
+                    .font(.system(size: 30, weight: .ultraLight))
+                    .foregroundStyle(GlassPalette.sea)
+                Text("Open your aquarium")
+                    .font(.system(.subheadline, design: .serif))
+                    .multilineTextAlignment(.center)
+            }
+            .padding(16)
+            .accessibilityLabel("Open Glass Aquarium to refresh this bowl")
+        }
+        }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .containerBackground(for: .widget) {
             AquariumTileBackground()
@@ -132,45 +148,4 @@ private struct FishbowlWidgetEntryView: View {
         }
     }
 
-    private var resolvedConfiguration: AquariumConfiguration {
-        switch family {
-        case .systemMedium where entry.profile.configuration.vesselStyle == .orb:
-            return AquariumConfiguration(
-                vesselStyle: .gallery,
-                fishSpecies: entry.profile.configuration.fishSpecies,
-                fishCount: entry.profile.configuration.fishCount,
-                additionalFishSpecies: entry.profile.configuration.additionalFishSpecies,
-                personality: entry.profile.configuration.personality,
-                companions: entry.profile.configuration.resolvedCompanions,
-                substrate: entry.profile.configuration.substrate,
-                decoration: entry.profile.configuration.decoration,
-                featurePiece: entry.profile.configuration.featurePiece
-            )
-        case .systemLarge where entry.profile.configuration.vesselStyle == .orb:
-            return AquariumConfiguration(
-                vesselStyle: .panorama,
-                fishSpecies: entry.profile.configuration.fishSpecies,
-                fishCount: entry.profile.configuration.fishCount,
-                additionalFishSpecies: entry.profile.configuration.additionalFishSpecies,
-                personality: entry.profile.configuration.personality,
-                companions: entry.profile.configuration.resolvedCompanions,
-                substrate: entry.profile.configuration.substrate,
-                decoration: entry.profile.configuration.decoration,
-                featurePiece: entry.profile.configuration.featurePiece
-            )
-        default:
-            return entry.profile.configuration
-        }
-    }
-
-    private var sceneInset: CGFloat {
-        switch family {
-        case .systemSmall:
-            return 2
-        case .systemMedium:
-            return 4
-        default:
-            return 6
-        }
-    }
 }

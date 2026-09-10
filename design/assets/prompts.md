@@ -1,0 +1,23 @@
+# Aquarium prototype assets
+
+The current Murano glass renderer uses authored meshes and procedural materials. These generated assets are retained from the earlier naturalistic prototype and are not sampled by the current renderer.
+
+Generated with the built-in image generation tool in generation mode. The fish, stone, and sand source images are stored in the app asset catalog. Their PNG C2PA metadata identifies `softwareAgent.name = gpt-image`, `version = 2.0`.
+
+The jade-water image is retained only in `design/assets/unused-baked-water.imageset` as an abandoned direction. It is not included in the app. The clear aquarium uses real-time water, light, caustics, and shadows.
+
+## AquariumPearlBetta
+
+Use case: photorealistic-natural. Production game texture asset, NOT a mockup. One single anatomically realistic pearl-white halfmoon betta fish in perfect orthographic SIDE PROFILE, HEAD POINTING RIGHT, tail to left. Fully isolated on a genuinely TRANSPARENT alpha background, no checkerboard baked in. Landscape 3:2 composition, fish including entire delicate fins occupies about 88% width and 80% height with clear transparent margin. Head center at 80% width, body horizontally spanning about 47% to 82% width, body height around 22% of canvas, tail large fan spanning 10% to 49% width. Exquisite natural ivory opalescent scales with faint champagne warmth, small black glossy eye, curved gill cover, full sheer flowing dorsal, anal and halfmoon tail fins with delicate silver fine branching fin rays, soft translucency. Body has anatomical dimensionality, but viewpoint strictly side on so image can texture a 3D fish. Soft neutral studio lighting, luminous but not clipped whites, subtle shadows built into anatomy. This is for a refined high quality realistic aquarium rendered live on iPhone. Correct anatomy, fish must look alive and graceful, not clipart, toy, ceramic sculpture, illustration or logo. No objects, no other fish, no cast shadow, no water, no bubbles, no UI, no text. Transparent background.
+
+## AquariumMineralStone
+
+Use case: photorealistic-natural. Production material albedo texture for a 3D aquarium rock. Square flat full-bleed SEAMLESS TILEABLE macro photograph of a beautiful charcoal slate-gray seiryu stone surface. Intricate natural fine jagged layered mineral striations, tiny pale gray hairline calcite veins, softly eroded rough patches and crevices. Restrained mineral charcoal/gray palette with hints of warm slate. Neutral diffuse flat lighting without any dominant directional illumination or dark cast shadows, suitable for adding real-time light in a 3D renderer. Fine realistic tactile detail. Entire canvas is only material, no isolated stone silhouette, no perspective, no objects, no scene, no text, no UI. Detail naturally varied across image, seamless edge tiling.
+
+## AquariumIvorySand
+
+Use case: photorealistic-natural. Production material albedo texture for a 3D aquarium floor. Square full-bleed SEAMLESS TILEABLE true top-down orthographic close photograph of exquisite pale ivory fine aquarium sand, tiny individual grains with subtle variation of warm chalk white, pearl, pale beige and sparse tiny gray grains. Very fine clean grain scale, gentle natural micro-relief. Neutral diffuse flat lighting, no directional shadows, no sun rays or caustics baked in. The whole image is uniformly fine sand, no objects or shells or pebbles, no large dunes, no vignette, no border, no text. Realistic high quality photographic detail and subtle contrast, sophisticated restrained texture. Seamless edge tiling.
+
+## AquariumJadeWater
+
+Use case: photorealistic-natural. Production background image for a real-time 3D nature aquarium. Portrait 2:3 full bleed raw underwater background, no phone, no UI or text. Camera is underwater looking horizontally through beautifully clear deep jade mineral-green water. Top 12% shows the UNDERSIDE of softly rippled water surface catching pale natural daylight. A broad soft shaft of daylight enters from far upper right; gentle believable volumetric light fades into transparent deep jade darkness to lower left. Upper center open empty water. Very subtle extremely distant soft out-of-focus fine aquatic vegetation only at the far outer bottom edges, no foreground objects. Large quiet volume of clear dark green water. No fish, no visible tank, no frame, no bowl, no sand or floor, no rocks, no bubbles, no particles, no harsh beams. Subtle optical depth, elegant high-end aquascape photographic realism. This background sits BEHIND separately rendered 3D sand, rocks, fish and plants; do not draw those foreground elements into it. Natural depth from slate-jade upper-right to near-black green lower left, not neon or blue cyberpunk.

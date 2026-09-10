@@ -1,0 +1,4 @@
+after.png: (1206, 2622); mean absolute channel difference 0.0000/255; peak channel difference 0
+seahorse-widgetSmall.png: (600, 600); mean absolute channel difference 0.0000/255; peak channel difference 0
+seahorse-widgetMedium.png: (960, 450); mean absolute channel difference 0.0000/255; peak channel difference 0
+seahorse-widgetLarge.png: (600, 600); mean absolute channel difference 0.0000/255; peak channel difference 0

@@ -1,0 +1,4 @@
+PASS: rapid A/B/A layout changes, profile identity cancellation, live Metal rendering
+PASS: single-sample presentation without depth; scene retains 4x MSAA
+PASS: concurrent day/night/baby/empty widget jobs, correct sizes, one reused renderer
+Snapshot batch: 69 UI heartbeats; largest gap 13.4 ms on Simulator
