@@ -82,6 +82,12 @@ struct AquariumCatalogCheck {
             let mesh = AquariumCatalog.decoration(decoration)
             if decoration == .minimal { precondition(mesh.indices.isEmpty) }
             else { verify(mesh, name: decoration.rawValue) }
+            if decoration == .coralGarden {
+                let roseFloor = mesh.vertices.filter { $0.uv.z == 7 || $0.uv.z == 12 }.map(\.position.y).min()!
+                let seafoamFloor = mesh.vertices.filter { $0.uv.z == 2 || $0.uv.z == 13 }.map(\.position.y).min()!
+                precondition(abs(roseFloor - seafoamFloor) < 0.004,
+                             "Coral colonies have mismatched ground contacts: \(roseFloor), \(seafoamFloor)")
+            }
         }
         for feature in FeaturePieceStyle.allCases {
             let mesh = AquariumCatalog.feature(feature)

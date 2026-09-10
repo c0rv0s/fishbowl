@@ -536,7 +536,8 @@ final class AquariumDepthRenderer: NSObject, MTKViewDelegate {
         for index in companions.indices {
             let style = configuration.resolvedCompanions[index]
             if let widget {
-                companionModels.append(widget.companionModel(style, index: index, count: companions.count))
+                companionModels.append(widget.companionModel(style, index: index, count: companions.count,
+                                                              knownBounds: companions[index].bounds))
                 companionMotions.append(SIMD4(style.motionID, 0, 0, 0))
                 continue
             }

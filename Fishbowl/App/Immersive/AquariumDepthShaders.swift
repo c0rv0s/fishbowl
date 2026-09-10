@@ -56,6 +56,7 @@ enum AquariumDepthShaders {
         float b = sin(p.x*.81-p.y*.43+t*.13) * cos(p.y*1.17+p.x*.31-t*.11);
         return pow(1.0-abs(a), 16.0)*.65 + pow(1.0-abs(b), 22.0)*.35;
     }
+    float widgetSandLine(float x) { return .865+.003*sin(x*8); }
 
     float3 sunlight() { return normalize(float3(.55,1.0,.65)); }
     float3 viewRay(float2 uv, constant Uniforms& u) {
@@ -166,7 +167,7 @@ enum AquariumDepthShaders {
         float c=caustic(uv*float2(u.control.w*.65,.65),u.control.x);
         color+=color*c*.045;
         // A shallow, face-on sand strip rather than the perspective floor.
-        float sandLine=.865+.003*sin(uv.x*8);
+        float sandLine=widgetSandLine(uv.x);
         float grain=noise(float3(uv*720,1));
         float3 sand=mix(float3(.78,.75,.68),float3(.94,.92,.85),.65+grain*.12);
         if(u.catalog.y==1) sand=mix(float3(.026,.040,.050),float3(.085,.11,.13),grain*.20+.3);
@@ -737,7 +738,12 @@ enum AquariumDepthShaders {
         float kind=u.control.y, t=u.control.x;
         float3 bowlUnit=(in.world-bowlCenter)/bowlRadii;
         if(u.widget.x<.5 && kind!=6 && (dot(bowlUnit,bowlUnit)>1.005 || in.world.z>bowlFront)) discard_fragment();
-        if(u.widget.x>.5 && kind!=9 && in.world.y < -u.widget.w*.73-.035) discard_fragment();
+        if(u.widget.x>.5 && kind!=9) {
+            float2 screenUV=in.position.xy/float2(u.camera.w*u.control.w,u.camera.w);
+            // The face-on substrate is the foreground edge of the widget floor.
+            // Mask sculptures at that same edge so nothing hangs below the sand.
+            if(screenUV.y>widgetSandLine(screenUV.x)) discard_fragment();
+        }
         float3 n=normalize(in.normal), eye=u.widget.x>.5 ? float3(0,0,1) : normalize(u.camera.xyz-in.world), light=sunlight();
         float3 color;
         if(kind==9.0) return float4(airBubble(in,n,eye,u,sceneColor),1);

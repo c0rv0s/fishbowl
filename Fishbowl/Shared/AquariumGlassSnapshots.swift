@@ -15,7 +15,7 @@ enum AquariumGlassSnapshots {
         let state = snapshot.isAlive ? (snapshot.babySpecies?.rawValue ?? "normal") : "empty"
         let root = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: BowlRepository.appGroupID)
             ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
-        return root?.appendingPathComponent("MuranoSnapshots-v22", isDirectory: true)
+        return root?.appendingPathComponent("MuranoSnapshots-v25", isDirectory: true)
             .appendingPathComponent("\(digest)-\(shape)-\(state)-\(lighting).png")
     }
 

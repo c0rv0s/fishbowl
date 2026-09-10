@@ -231,11 +231,13 @@ enum AquariumGeometry {
                              lift: 0.18, tilt: 0.65, yaw: 0.17, phase: 2.1, tint: 12))
         mesh.append(coralCup(center: SIMD3(-0.41, -1.075, -0.44), radius: SIMD2(0.29, 0.24),
                              lift: 0.18, tilt: 0.88, yaw: -0.34, phase: 4.2, tint: 12))
-        // A lower seafoam colony stays close to the main piece, leaving open sand.
-        mesh.append(ellipsoid(center: SIMD3(0.01, -1.48, 0.08), radii: SIMD3(0.16, 0.064, 0.14), seed: 2))
-        mesh.append(coralCup(center: SIMD3(0.02, -1.42, 0.10), radius: SIMD2(0.25, 0.20),
+        // Match the seafoam colony's own base to the rose colony's floor so
+        // both halves remain seated when the combined sculpture is grounded.
+        let seafoamDrop: Float = 0.031
+        mesh.append(ellipsoid(center: SIMD3(0.01, -1.48 - seafoamDrop, 0.08), radii: SIMD3(0.16, 0.064, 0.14), seed: 2))
+        mesh.append(coralCup(center: SIMD3(0.02, -1.42 - seafoamDrop, 0.10), radius: SIMD2(0.25, 0.20),
                              lift: 0.12, tilt: 0.40, yaw: 0.30, phase: 1.3, tint: 13))
-        mesh.append(coralCup(center: SIMD3(-0.07, -1.285, -0.015), radius: SIMD2(0.23, 0.18),
+        mesh.append(coralCup(center: SIMD3(-0.07, -1.285 - seafoamDrop, -0.015), radius: SIMD2(0.23, 0.18),
                              lift: 0.13, tilt: 0.77, yaw: 0.44, phase: 3.5, tint: 13))
         return mesh
     }

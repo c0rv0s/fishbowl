@@ -372,7 +372,7 @@
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = Fishbowl/App/Fishbowl.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = PLNFCVNGS6;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Fishbowl/App/Info.plist;
@@ -397,7 +397,7 @@
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = FishbowlWidgetExtension/FishbowlWidgetExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = PLNFCVNGS6;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = FishbowlWidgetExtension/Info.plist;
@@ -475,7 +475,7 @@
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = FishbowlWidgetExtension/FishbowlWidgetExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = PLNFCVNGS6;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = FishbowlWidgetExtension/Info.plist;
@@ -563,7 +563,7 @@
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = Fishbowl/App/Fishbowl.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = PLNFCVNGS6;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Fishbowl/App/Info.plist;

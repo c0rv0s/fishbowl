@@ -115,6 +115,7 @@ struct AquariumWidgetLayout {
     var halfWidth: Float { 1.65 }
     var halfHeight: Float { halfWidth / max(aspect, 0.5) }
     var sandY: Float { -halfHeight * 0.73 }
+    var habitatBurial: Float { halfHeight * 0.01 }
 
     private func bounds(_ mesh: AquariumMeshData) -> (min: SIMD3<Float>, max: SIMD3<Float>) {
         var low = SIMD3<Float>(repeating: .infinity), high = -low
@@ -127,19 +128,19 @@ struct AquariumWidgetLayout {
     func propModel(_ mesh: AquariumMeshData, feature: Bool) -> simd_float4x4 {
         guard !mesh.vertices.isEmpty else { return matrix_identity_float4x4 }
         let box = bounds(mesh), width = max(0.01, box.max.x - box.min.x)
-        let height = max(0.01, box.max.y - AquariumBowl.sandHeight)
+        let height = max(0.01, box.max.y - box.min.y)
         let scale = min(0.96, min(halfHeight * 0.66 / height, (round ? 0.88 : 1.15) / width))
         let centerX = (box.min.x + box.max.x) * 0.5
         let targetX = halfWidth * (round ? 0.31 : 0.47) * (feature ? 1 : -1)
         return AquariumCamera.model(position: SIMD3(targetX - centerX * scale,
-            sandY - AquariumBowl.sandHeight * scale, -0.60), scale: scale)
+            sandY - habitatBurial - box.min.y * scale, -0.60), scale: scale)
     }
 
     func pairedPropModel(_ mesh: AquariumMeshData, index: Int, hasDecoration: Bool) -> simd_float4x4 {
         guard !mesh.vertices.isEmpty else { return matrix_identity_float4x4 }
         let box = bounds(mesh)
         let width = max(0.01, box.max.x - box.min.x)
-        let height = max(0.01, box.max.y - AquariumBowl.sandHeight)
+        let height = max(0.01, box.max.y - box.min.y)
         let targetX: Float
         if hasDecoration {
             targetX = Float(index - 1) * (round ? 0.67 : 0.94)
@@ -149,7 +150,7 @@ struct AquariumWidgetLayout {
         let widthLimit: Float = hasDecoration ? (round ? 0.57 : 0.80) : (round ? 0.86 : 1.10)
         let scale = min(1.12, min(widthLimit / width, halfHeight * 0.62 / height))
         return AquariumCamera.model(position: SIMD3(targetX - (box.min.x + box.max.x) * 0.5 * scale,
-            sandY - AquariumBowl.sandHeight * scale, -0.60), scale: scale)
+            sandY - habitatBurial - box.min.y * scale, -0.60), scale: scale)
     }
 
     func fishModel(_ species: FishSpecies, index: Int, count: Int, baby: Bool,
@@ -174,13 +175,19 @@ struct AquariumWidgetLayout {
             yaw: direction < 0 ? .pi : 0, scale: scale)
     }
 
-    func companionModel(_ style: CompanionStyle, index: Int, count: Int) -> simd_float4x4 {
+    func companionModel(_ style: CompanionStyle, index: Int, count: Int,
+                        knownBounds: (min: SIMD3<Float>, max: SIMD3<Float>)? = nil) -> simd_float4x4 {
         let scale = min(1.1, halfHeight * 1.20) * (count > 1 ? 0.80 : 1)
-        if style == .snail {
-            return AquariumCamera.model(position: SIMD3(-halfWidth * 0.78, -halfHeight * 0.06, 0.50), scale: scale)
+        let swimming = style == .shrimp || style == .miniSubmarine
+        let x = style == .snail ? -halfWidth * (round ? 0.43 : 0.64)
+            : (count == 1 ? halfWidth * 0.11 : (-0.32 + Float(index) * 0.32) * halfWidth)
+        let y: Float
+        if swimming {
+            y = -halfHeight * 0.28
+        } else {
+            let floor = (knownBounds ?? bounds(AquariumCatalog.companion(style))).min.y
+            y = sandY - floor * scale
         }
-        let x = count == 1 ? halfWidth * 0.11 : (-0.32 + Float(index) * 0.32) * halfWidth
-        let y = (style == .shrimp || style == .miniSubmarine) ? -halfHeight * 0.28 : sandY + 0.014
         return AquariumCamera.model(position: SIMD3(x, y, 0.55), scale: scale)
     }
 }

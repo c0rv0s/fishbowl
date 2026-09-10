@@ -8,13 +8,18 @@ struct AquariumGPUMesh: @unchecked Sendable {
     let vertices: MTLBuffer
     let indices: MTLBuffer
     let count: Int
+    let bounds: (min: SIMD3<Float>, max: SIMD3<Float>)
 
     init(device: MTLDevice, data: AquariumMeshData) throws {
         guard let v = device.makeBuffer(bytes: data.vertices, length: data.vertices.count * MemoryLayout<AquariumVertex>.stride),
               let i = device.makeBuffer(bytes: data.indices, length: data.indices.count * MemoryLayout<UInt32>.stride) else {
             throw AquariumRenderError.unavailable("Unable to allocate the aquarium geometry.")
         }
-        vertices = v; indices = i; count = data.indices.count
+        var low = SIMD3<Float>(repeating: .infinity), high = -low
+        for vertex in data.vertices {
+            low = simd_min(low, vertex.position.xyz); high = simd_max(high, vertex.position.xyz)
+        }
+        vertices = v; indices = i; count = data.indices.count; bounds = (low, high)
     }
 }
 

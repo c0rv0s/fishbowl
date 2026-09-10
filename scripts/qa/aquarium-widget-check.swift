@@ -43,6 +43,9 @@ struct AquariumWidgetCheck {
                         let model = selection.count == 2
                             ? layout.pairedPropModel(mesh, index: index, hasDecoration: hasDecoration)
                             : layout.propModel(mesh, feature: !hasDecoration || index > 0)
+                        let floor = mesh.vertices.map { (model * $0.position).y }.min()!
+                        precondition(abs(floor - (layout.sandY - layout.habitatBurial)) < 0.0001,
+                                     "Habitat misses widget sand: \(selection), \(floor), \(layout.sandY)")
                         for vertex in mesh.vertices {
                             let world = model * vertex.position
                             if world.y < layout.sandY { continue }
@@ -55,15 +58,25 @@ struct AquariumWidgetCheck {
             }
             for style in CompanionStyle.allCases where style != .none {
                 for index in 0..<3 {
-                    let model = layout.companionModel(style, index: index, count: 3)
-                    for vertex in AquariumCatalog.companion(style).vertices {
+                    let mesh = AquariumCatalog.companion(style)
+                    var low = SIMD3<Float>(repeating: .infinity), high = -low
+                    for vertex in mesh.vertices {
+                        low = simd_min(low, vertex.position.xyz); high = simd_max(high, vertex.position.xyz)
+                    }
+                    let model = layout.companionModel(style, index: index, count: 3, knownBounds: (low, high))
+                    if style != .shrimp && style != .miniSubmarine {
+                        let floor = mesh.vertices.map { (model * $0.position).y }.min()!
+                        precondition(abs(floor - layout.sandY) < 0.0001,
+                                     "Walking companion misses widget sand: \(style), \(floor), \(layout.sandY)")
+                    }
+                    for vertex in mesh.vertices {
                         let p = projected(model * vertex.position)
                         precondition(abs(p.x) < 0.94 && abs(p.y) < 0.94, "Cropped companion: \(style)")
-                        if round { precondition(simd_length(p) < 0.94, "Companion crosses round widget edge") }
+                        if round { precondition(simd_length(p) < 0.94, "Companion crosses round widget edge: \(style)") }
                     }
                 }
             }
         }
-        print("PASS: depth-independent straight-on projection, all \(FishSpecies.allCases.count) fish at every population, all props and all friends fit the three widget layouts")
+        print("PASS: depth-independent straight-on projection, all \(FishSpecies.allCases.count) fish at every population, all props meet the sand, and all friends fit with walkers grounded in the three widget layouts")
     }
 }
